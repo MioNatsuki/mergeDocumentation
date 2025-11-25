@@ -1,181 +1,99 @@
-from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
-                             QLabel, QLineEdit, QPushButton, QFrame)
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont, QPixmap, QPainter, QColor
+from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
+                             QLineEdit, QPushButton, QMessageBox, QFrame)
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QFont, QPixmap
+from config.database import SessionLocal
+from core.auth import AuthService
 
-class LoginWindow(QMainWindow):
+class LoginWindow(QWidget):
+    login_successful = pyqtSignal(object)  # Emite el usuario autenticado
+    
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Emisor de Documentos")
-        self.setFixedSize(1280, 720)
-
-        # Widget central
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        
-        # Layout principal horizontal
-        main_layout = QHBoxLayout(central_widget)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(0)
-        
-        # Panel izquierdo con ilustración
-        left_panel = self.create_left_panel()
-        
-        # Panel derecho con formulario
-        right_panel = self.create_right_panel()
-        
-        main_layout.addWidget(left_panel, stretch=1)
-        main_layout.addWidget(right_panel, stretch=1)
-        
-        # Estilos
-        self.setStyleSheet("""
-            QMainWindow {
-                background-color: #F3E8E8;
-            }
-        """)
-
-        pixmap = QPixmap("./monstrito.png")
-        self.illustration_label.setPixmap(pixmap.scaled(400, 400, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
-        self.illustration_label.setStyleSheet("")
+        self.setWindowTitle("Sistema de Correspondencia - Login")
+        self.setFixedSize(400, 500)
+        self.setup_ui()
     
-    def create_left_panel(self):
-        """Crea el panel izquierdo con el header y la ilustración"""
-        panel = QWidget()
-        panel.setStyleSheet("background-color: #F3E8E8;")
-        
-        layout = QVBoxLayout(panel)
-        layout.setContentsMargins(0, 0, 0, 0)
-        
-        # Header con título
-        header = QWidget()
-        header.setFixedHeight(80)
-        header.setStyleSheet("background-color: #7D5F5F;")
-        
-        header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(40, 0, 0, 0)
-        
-        title = QLabel("Emisor de Documentos")
-        title.setStyleSheet("color: white; font-size: 36px; font-weight: 300;")
-        header_layout.addWidget(title, alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        
-        layout.addWidget(header)
-        
-        # Área de ilustración (placeholder)
-        illustration_container = QWidget()
-        illustration_layout = QVBoxLayout(illustration_container)
-        illustration_layout.setContentsMargins(80, 100, 80, 100)
-        
-        # Aquí iría tu ilustración del monstruito
-        # Por ahora un placeholder
-        self.illustration_label = QLabel("🖥️")
-        self.illustration_label.setStyleSheet("font-size: 200px;")
-        self.illustration_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        illustration_layout.addWidget(self.illustration_label)
-        
-        layout.addWidget(illustration_container)
-        
-        return panel
-    
-    def create_right_panel(self):
-        """Crea el panel derecho con el formulario de login"""
-        panel = QWidget()
-        panel.setStyleSheet("background-color: #F3E8E8;")
-        
-        layout = QVBoxLayout(panel)
-        layout.setContentsMargins(100, 0, 100, 0)
+    def setup_ui(self):
+        layout = QVBoxLayout()
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.setSpacing(20)
         
-        # Contenedor del formulario
-        form_container = QWidget()
-        form_container.setMaximumWidth(500)
-        form_layout = QVBoxLayout(form_container)
-        form_layout.setSpacing(20)
+        # Logo/Header
+        header = QLabel("Sistema de Correspondencia")
+        header.setFont(QFont("Arial", 18, QFont.Weight.Bold))
+        header.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
-        # Título "Ingresa a tu cuenta"
-        title = QLabel("Ingresa a tu cuenta")
-        title.setStyleSheet("font-size: 28px; font-weight: bold; color: #000000; margin-bottom: 20px;")
-        title.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        form_layout.addWidget(title)
+        # Form frame
+        form_frame = QFrame()
+        form_frame.setFrameStyle(QFrame.Shape.StyledPanel)
+        form_layout = QVBoxLayout()
+        form_layout.setSpacing(15)
         
-        # Campo Usuario
-        self.username_input = self.create_input_field("👤 Usuario")
-        form_layout.addWidget(self.username_input)
+        # Usuario
+        lbl_usuario = QLabel("Usuario:")
+        self.txt_usuario = QLineEdit()
+        self.txt_usuario.setPlaceholderText("Ingrese su usuario")
         
-        # Campo Contraseña
-        self.password_input = self.create_input_field("🔒 Contraseña", is_password=True)
-        form_layout.addWidget(self.password_input)
+        # Contraseña
+        lbl_password = QLabel("Contraseña:")
+        self.txt_password = QLineEdit()
+        self.txt_password.setPlaceholderText("Ingrese su contraseña")
+        self.txt_password.setEchoMode(QLineEdit.EchoMode.Password)
         
-        # Botón Entrar
-        login_button = QPushButton("Entrar")
-        login_button.setFixedHeight(55)
-        login_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        login_button.setStyleSheet("""
-            QPushButton {
-                background-color: #7D5F5F;
-                color: white;
-                font-size: 18px;
-                font-weight: bold;
-                border: none;
-                border-radius: 5px;
-            }
-            QPushButton:hover {
-                background-color: #6B4F4F;
-            }
-            QPushButton:pressed {
-                background-color: #5A4040;
-            }
-        """)
-        login_button.clicked.connect(self.handle_login)
-        form_layout.addWidget(login_button)
+        # Botón
+        self.btn_login = QPushButton("Iniciar Sesión")
+        self.btn_login.clicked.connect(self.attempt_login)
         
-        layout.addWidget(form_container)
+        # Agregar al form
+        form_layout.addWidget(lbl_usuario)
+        form_layout.addWidget(self.txt_usuario)
+        form_layout.addWidget(lbl_password)
+        form_layout.addWidget(self.txt_password)
+        form_layout.addWidget(self.btn_login)
         
-        return panel
+        form_frame.setLayout(form_layout)
+        
+        # Agregar al layout principal
+        layout.addWidget(header)
+        layout.addWidget(form_frame)
+        
+        self.setLayout(layout)
+        
+        # Enter para login
+        self.txt_password.returnPressed.connect(self.attempt_login)
     
-    def create_input_field(self, placeholder, is_password=False):
-        """Crea un campo de entrada estilizado"""
-        input_field = QLineEdit()
-        input_field.setPlaceholderText(placeholder)
-        input_field.setFixedHeight(55)
+    def attempt_login(self):
+        usuario = self.txt_usuario.text().strip()
+        password = self.txt_password.text()
         
-        if is_password:
-            input_field.setEchoMode(QLineEdit.EchoMode.Password)
+        if not usuario or not password:
+            QMessageBox.warning(self, "Error", "Por favor complete todos los campos")
+            return
         
-        input_field.setStyleSheet("""
-            QLineEdit {
-                background-color: white;
-                border: 2px solid #D0C5C0;
-                border-radius: 8px;
-                padding-left: 15px;
-                font-size: 16px;
-                color: #666666;
-            }
-            QLineEdit:focus {
-                border: 2px solid #7D5F5F;
-                outline: none;
-            }
-        """)
+        self.btn_login.setEnabled(False)
+        self.btn_login.setText("Verificando...")
         
-        return input_field
-    
-    def handle_login(self):
-        """Maneja el evento de login"""
-        username = self.username_input.text()
-        password = self.password_input.text()
-        
-        # Aquí irá la lógica de autenticación
-        print(f"Login attempt - Usuario: {username}")
-        
-        # TODO: Validar credenciales contra la base de datos
-        # TODO: Abrir ventana principal si credenciales correctas
-
-
-# Para probar la ventana
-if __name__ == "__main__":
-    from PyQt6.QtWidgets import QApplication
-    import sys
-    
-    app = QApplication(sys.argv)
-    window = LoginWindow()
-    window.show()
-    sys.exit(app.exec())
+        try:
+            db = SessionLocal()
+            auth_service = AuthService(db)
+            
+            user, mensaje = auth_service.autenticar_usuario(
+                usuario, password,
+                ip_address="localhost",  # En producción obtener IP real
+                user_agent="PyQt App"
+            )
+            
+            if user:
+                self.login_successful.emit(user)
+            else:
+                QMessageBox.critical(self, "Error de autenticación", mensaje)
+                self.txt_password.clear()
+                self.txt_password.setFocus()
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error de conexión: {str(e)}")
+        finally:
+            db.close()
+            self.btn_login.setEnabled(True)
+            self.btn_login.setText("Iniciar Sesión")

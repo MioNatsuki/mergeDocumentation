@@ -1,0 +1,21 @@
+2025-11-25 10:29:08,701 - correspondencia_app - ERROR - Error en auditoría: (psycopg2.errors.InvalidTextRepresentation) la sintaxis de entrada no es válida para tipo inet: «localhost»
+LINE 1: ...fallido', 'auth', '{"usuario_intento": "admin"}', 'localhost...
+                                                             ^
+
+[SQL: INSERT INTO bitacora (usuario_id, accion, modulo, detalles, ip_address, user_agent) VALUES (%(usuario_id)s, %(accion)s, %(modulo)s, %(detalles)s, %(ip_address)s, %(user_agent)s) RETURNING bitacora.id, bitacora.fecha_evento]
+[parameters: {'usuario_id': None, 'accion': 'login_fallido', 'modulo': 'auth', 'detalles': '{"usuario_intento": "admin"}', 'ip_address': 'localhost', 'user_agent': 'PyQt App'}]
+(Background on this error at: https://sqlalche.me/e/20/9h9h)
+2025-11-25 10:29:13,581 - correspondencia_app - ERROR - Error en auditoría: (psycopg2.errors.InvalidTextRepresentation) la sintaxis de entrada no es válida para tipo inet: «localhost»
+LINE 1: ...fallido', 'auth', '{"usuario_intento": "admin"}', 'localhost...
+                                                             ^
+
+[SQL: INSERT INTO bitacora (usuario_id, accion, modulo, detalles, ip_address, user_agent) VALUES (%(usuario_id)s, %(accion)s, %(modulo)s, %(detalles)s, %(ip_address)s, %(user_agent)s) RETURNING bitacora.id, bitacora.fecha_evento]
+[parameters: {'usuario_id': None, 'accion': 'login_fallido', 'modulo': 'auth', 'detalles': '{"usuario_intento": "admin"}', 'ip_address': 'localhost', 'user_agent': 'PyQt App'}]
+(Background on this error at: https://sqlalche.me/e/20/9h9h)
+2025-11-25 10:29:37,877 - correspondencia_app - ERROR - Error en auditoría: (psycopg2.errors.InvalidTextRepresentation) la sintaxis de entrada no es válida para tipo inet: «localhost»
+LINE 1: ..., user_agent) VALUES (5, 'login', 'auth', 'null', 'localhost...
+                                                             ^
+
+[SQL: INSERT INTO bitacora (usuario_id, accion, modulo, detalles, ip_address, user_agent) VALUES (%(usuario_id)s, %(accion)s, %(modulo)s, %(detalles)s, %(ip_address)s, %(user_agent)s) RETURNING bitacora.id, bitacora.fecha_evento]
+[parameters: {'usuario_id': 5, 'accion': 'login', 'modulo': 'auth', 'detalles': 'null', 'ip_address': 'localhost', 'user_agent': 'PyQt App'}]
+(Background on this error at: https://sqlalche.me/e/20/9h9h)

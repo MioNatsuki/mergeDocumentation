@@ -80,7 +80,7 @@ class LoginWindow(QWidget):
             
             user, mensaje = auth_service.autenticar_usuario(
                 usuario, password,
-                ip_address="localhost",  # En producción obtener IP real
+                ip_address=None,  # Dejar que AuthService maneje la IP
                 user_agent="PyQt App"
             )
             

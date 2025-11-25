@@ -19,3 +19,28 @@ LINE 1: ..., user_agent) VALUES (5, 'login', 'auth', 'null', 'localhost...
 [SQL: INSERT INTO bitacora (usuario_id, accion, modulo, detalles, ip_address, user_agent) VALUES (%(usuario_id)s, %(accion)s, %(modulo)s, %(detalles)s, %(ip_address)s, %(user_agent)s) RETURNING bitacora.id, bitacora.fecha_evento]
 [parameters: {'usuario_id': 5, 'accion': 'login', 'modulo': 'auth', 'detalles': 'null', 'ip_address': 'localhost', 'user_agent': 'PyQt App'}]
 (Background on this error at: https://sqlalche.me/e/20/9h9h)
+2025-11-25 11:02:59,201 - correspondencia_app - ERROR - Error en auditoría: (psycopg2.errors.InvalidTextRepresentation) la sintaxis de entrada no es válida para tipo inet: «localhost»
+LINE 1: ...admin", "motivo": "Contrase\u00f1a incorrecta"}', 'localhost...
+                                                             ^
+
+[SQL: INSERT INTO bitacora (usuario_id, accion, modulo, detalles, ip_address, user_agent) VALUES (%(usuario_id)s, %(accion)s, %(modulo)s, %(detalles)s, %(ip_address)s, %(user_agent)s) RETURNING bitacora.id, bitacora.fecha_evento]
+[parameters: {'usuario_id': None, 'accion': 'login_fallido', 'modulo': 'auth', 'detalles': '{"usuario_intento": "superadmin", "motivo": "Contrase\\u00f1a incorrecta"}', 'ip_address': 'localhost', 'user_agent': 'PyQt App'}]
+(Background on this error at: https://sqlalche.me/e/20/9h9h)
+2025-11-25 11:03:04,401 - correspondencia_app - ERROR - Error en auditoría: (psycopg2.errors.InvalidTextRepresentation) la sintaxis de entrada no es válida para tipo inet: «localhost»
+LINE 1: ..., user_agent) VALUES (5, 'login', 'auth', 'null', 'localhost...
+                                                             ^
+
+[SQL: INSERT INTO bitacora (usuario_id, accion, modulo, detalles, ip_address, user_agent) VALUES (%(usuario_id)s, %(accion)s, %(modulo)s, %(detalles)s, %(ip_address)s, %(user_agent)s) RETURNING bitacora.id, bitacora.fecha_evento]
+[parameters: {'usuario_id': 5, 'accion': 'login', 'modulo': 'auth', 'detalles': 'null', 'ip_address': 'localhost', 'user_agent': 'PyQt App'}]
+(Background on this error at: https://sqlalche.me/e/20/9h9h)
+2025-11-25 11:07:57,319 - correspondencia_app - INFO - AUDITORIA - auth.logout - Usuario: 5
+2025-11-25 11:16:08,025 - correspondencia_app - ERROR - Error en auditoría: (psycopg2.errors.InvalidTextRepresentation) la sintaxis de entrada no es válida para tipo inet: «localhost»
+LINE 1: ..., user_agent) VALUES (5, 'login', 'auth', 'null', 'localhost...
+                                                             ^
+
+[SQL: INSERT INTO bitacora (usuario_id, accion, modulo, detalles, ip_address, user_agent) VALUES (%(usuario_id)s, %(accion)s, %(modulo)s, %(detalles)s, %(ip_address)s, %(user_agent)s) RETURNING bitacora.id, bitacora.fecha_evento]
+[parameters: {'usuario_id': 5, 'accion': 'login', 'modulo': 'auth', 'detalles': 'null', 'ip_address': 'localhost', 'user_agent': 'PyQt App'}]
+(Background on this error at: https://sqlalche.me/e/20/9h9h)
+2025-11-25 11:22:56,064 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 5
+2025-11-25 11:37:18,674 - correspondencia_app - INFO - AUDITORIA - auth.logout - Usuario: 5
+2025-11-25 11:37:29,270 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 5

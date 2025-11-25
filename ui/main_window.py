@@ -1,9 +1,13 @@
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QLabel, QPushButton, QStackedWidget, QMessageBox)
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont, QAction, QIcon
+from PyQt6.QtGui import QFont, QAction
 from core.models import Usuario
 from utils.logger import auditoria
+
+# Importar módulos nuevos
+from ui.modules.proyectos.dashboard_proyectos import DashboardProyectos
+from ui.modules.plantillas.dashboard_plantillas import DashboardPlantillas
 
 class MainWindow(QMainWindow):
     def __init__(self, usuario: Usuario):
@@ -15,7 +19,6 @@ class MainWindow(QMainWindow):
         self.setup_menu()
     
     def setup_ui(self):
-        # Widget central y layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         
@@ -32,8 +35,13 @@ class MainWindow(QMainWindow):
         self.stacked_widget = QStackedWidget()
         layout.addWidget(self.stacked_widget)
         
-        # Pantallas iniciales
-        self.setup_dashboard()
+        # Inicializar dashboard de proyectos
+        self.dashboard_proyectos = DashboardProyectos(self.usuario, self.stacked_widget)
+        self.dashboard_proyectos.project_selected.connect(self.on_proyecto_seleccionado)
+        self.stacked_widget.addWidget(self.dashboard_proyectos)
+        
+        # Mostrar dashboard de proyectos por defecto
+        self.stacked_widget.setCurrentWidget(self.dashboard_proyectos)
     
     def setup_menu(self):
         menubar = self.menuBar()
@@ -41,7 +49,7 @@ class MainWindow(QMainWindow):
         # Menú Proyectos
         menu_proyectos = menubar.addMenu("&Proyectos")
         action_seleccionar = QAction("Seleccionar Proyecto", self)
-        action_seleccionar.triggered.connect(self.show_proyectos)
+        action_seleccionar.triggered.connect(self.mostrar_dashboard_proyectos)
         menu_proyectos.addAction(action_seleccionar)
         
         # Menú Plantillas (según rol)
@@ -77,53 +85,40 @@ class MainWindow(QMainWindow):
         menu_perfil.addAction(action_mi_perfil)
         menu_perfil.addAction(action_logout)
     
-    def setup_dashboard(self):
-        """Pantalla inicial de dashboard según rol"""
-        dashboard_widget = QWidget()
-        layout = QVBoxLayout()
-        
-        title = QLabel("Dashboard Principal")
-        title.setFont(QFont("Arial", 16, QFont.Weight.Bold))
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(title)
-        
-        # Contenido según rol
-        if self.usuario.rol == "superadmin":
-            content = QLabel("SuperAdmin: Acceso completo al sistema")
-        elif self.usuario.rol == "admin":
-            content = QLabel("Admin: Gestión de proyectos y plantillas asignadas")
-        else:
-            content = QLabel("Lector: Generación de documentos en proyectos asignados")
-        
-        content.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(content)
-        
-        dashboard_widget.setLayout(layout)
-        self.stacked_widget.addWidget(dashboard_widget)
+    def mostrar_dashboard_proyectos(self):
+        """Muestra el dashboard de proyectos"""
+        self.stacked_widget.setCurrentWidget(self.dashboard_proyectos)
+        self.dashboard_proyectos.cargar_proyectos()
     
-    def show_proyectos(self):
-        # TODO: Implementar selección de proyectos
-        QMessageBox.information(self, "Proyectos", "Módulo de proyectos en desarrollo")
+    def on_proyecto_seleccionado(self, proyecto_id):
+        """Cuando se selecciona un proyecto desde el dashboard"""
+        QMessageBox.information(self, "Proyecto Seleccionado", 
+                              f"Proyecto {proyecto_id} seleccionado. Navegando a plantillas...")
     
     def show_plantillas(self):
-        # TODO: Implementar gestión de plantillas
         QMessageBox.information(self, "Plantillas", "Módulo de plantillas en desarrollo")
     
     def show_gestion_usuarios(self):
-        # TODO: Implementar gestión de usuarios
         QMessageBox.information(self, "Usuarios", "Módulo de usuarios en desarrollo")
     
     def show_auditoria(self):
-        # TODO: Implementar auditoría
         QMessageBox.information(self, "Auditoría", "Módulo de auditoría en desarrollo")
     
     def show_estadisticas(self):
-        # TODO: Implementar estadísticas
         QMessageBox.information(self, "Estadísticas", "Módulo de estadísticas en desarrollo")
     
     def show_perfil(self):
-        # TODO: Implementar perfil de usuario
         QMessageBox.information(self, "Perfil", f"Perfil de {self.usuario.nombre}\nRol: {self.usuario.rol}")
+
+    def on_proyecto_seleccionado(self, proyecto_id):
+        """Cuando se selecciona un proyecto desde el dashboard"""
+        # Crear dashboard de plantillas para el proyecto seleccionado
+        dashboard_plantillas = DashboardPlantillas(self.usuario, proyecto_id)
+        dashboard_plantillas.volver_a_proyectos.connect(self.mostrar_dashboard_proyectos)
+        
+        # Agregar al stacked widget y mostrar
+        self.stacked_widget.addWidget(dashboard_plantillas)
+        self.stacked_widget.setCurrentWidget(dashboard_plantillas)
     
     def logout(self):
         reply = QMessageBox.question(
@@ -133,7 +128,6 @@ class MainWindow(QMainWindow):
         )
         
         if reply == QMessageBox.StandardButton.Yes:
-            # Registrar logout en bitácora
             from config.database import SessionLocal
             db = SessionLocal()
             try:

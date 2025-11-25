@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, JSON, ForeignKey, Numeric, Date
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, JSON, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from config.database import Base
@@ -18,9 +18,8 @@ class Usuario(Base):
     ultimo_login = Column(DateTime(timezone=True))
     proyecto_permitido = Column(String(200))
     
-    # Relaciones
+    # Relaciones SIMPLIFICADAS - solo las esenciales por ahora
     bitacoras = relationship("Bitacora", back_populates="usuario")
-    emisiones = relationship("EmisionFinal", back_populates="usuario")
     
     def set_password(self, password):
         """Encripta y establece la contraseña"""
@@ -39,7 +38,7 @@ class Usuario(Base):
 
 class Proyecto(Base):
     __tablename__ = "proyectos"
-    __table_args__ = {'extend_existing': True}  # ← AGREGAR ESTA LÍNEA
+    __table_args__ = {'extend_existing': True}
     
     id = Column(Integer, primary_key=True, index=True)
     nombre = Column(String(100), nullable=False)
@@ -49,17 +48,17 @@ class Proyecto(Base):
     fecha_creacion = Column(DateTime(timezone=True), server_default=func.now())
     config_json = Column(JSON)
     
-    # Relaciones
-    plantillas = relationship("Plantilla", back_populates="proyecto", cascade="all, delete-orphan")
+    # SOLO relaciones esenciales - comentar las que causan problemas
+    plantillas = relationship("Plantilla", back_populates="proyecto")
     emisiones_temp = relationship("EmisionTemp", back_populates="proyecto")
-    emisiones_final = relationship("EmisionFinal", back_populates="proyecto")
+    # emisiones_final = relationship("EmisionFinal", back_populates="proyecto")
 
 class Plantilla(Base):
     __tablename__ = "plantillas"
-    __table_args__ = {'extend_existing': True}  # ← AGREGAR ESTA LÍNEA
+    __table_args__ = {'extend_existing': True}
     
     id = Column(Integer, primary_key=True, index=True)
-    proyecto_id = Column(Integer, ForeignKey("proyectos.id", ondelete="CASCADE"))
+    proyecto_id = Column(Integer, ForeignKey("proyectos.id"))
     nombre = Column(String(100), nullable=False)
     descripcion = Column(Text)
     ruta_archivo = Column(String(255))
@@ -69,25 +68,25 @@ class Plantilla(Base):
     fecha_creacion = Column(DateTime(timezone=True), server_default=func.now())
     usuario_creador = Column(Integer, ForeignKey("usuarios.id"))
     
-    # Relaciones
+    # Relación
     proyecto = relationship("Proyecto", back_populates="plantillas")
 
 class Bitacora(Base):
     __tablename__ = "bitacora"
-    __table_args__ = {'extend_existing': True}  # ← AGREGAR ESTA LÍNEA
+    __table_args__ = {'extend_existing': True}
     
     id = Column(Integer, primary_key=True, index=True)
     usuario_id = Column(Integer, ForeignKey("usuarios.id"))
     accion = Column(String(50), nullable=False)
     modulo = Column(String(50), nullable=False)
     detalles = Column(JSON)
-    ip_address = Column(String(45))
+    ip_address = Column(String(45))  # Cambiado a String para evitar problemas con inet
     user_agent = Column(Text)
     fecha_evento = Column(DateTime(timezone=True), server_default=func.now())
     
     usuario = relationship("Usuario", back_populates="bitacoras")
 
-# Agregar __table_args__ a todos los modelos existentes
+# Modelos TEMPORALMENTE COMENTADOS hasta que los necesitemos
 class EmisionTemp(Base):
     __tablename__ = "emisiones_temp"
     __table_args__ = {'extend_existing': True}
@@ -104,6 +103,7 @@ class EmisionTemp(Base):
     fecha_carga = Column(DateTime(timezone=True), server_default=func.now())
     sesion_id = Column(String(100))
 
+"""
 class EmisionFinal(Base):
     __tablename__ = "emisiones_final"
     __table_args__ = {'extend_existing': True}
@@ -118,9 +118,6 @@ class EmisionFinal(Base):
     fecha_generacion = Column(DateTime(timezone=True))
     estado_generacion = Column(String(20))
     fecha_creacion = Column(DateTime(timezone=True), server_default=func.now())
-    
-    usuario = relationship("Usuario", back_populates="emisiones")
-    proyecto = relationship("Proyecto", back_populates="emisiones_final")
 
 class ConfiguracionSistema(Base):
     __tablename__ = "configuracion_sistema"
@@ -132,8 +129,4 @@ class ConfiguracionSistema(Base):
     tipo = Column(String(20))
     descripcion = Column(Text)
     editable = Column(Boolean, default=True)
-
-# Agregar relaciones faltantes a EmisionTemp
-EmisionTemp.proyecto = relationship("Proyecto", back_populates="emisiones_temp")
-EmisionTemp.plantilla = relationship("Plantilla")
-EmisionTemp.usuario = relationship("Usuario")
+"""

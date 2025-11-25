@@ -44,3 +44,9 @@ LINE 1: ..., user_agent) VALUES (5, 'login', 'auth', 'null', 'localhost...
 2025-11-25 11:22:56,064 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 5
 2025-11-25 11:37:18,674 - correspondencia_app - INFO - AUDITORIA - auth.logout - Usuario: 5
 2025-11-25 11:37:29,270 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 5
+2025-11-25 11:45:40,441 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 5
+2025-11-25 13:00:40,935 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 6
+2025-11-25 13:16:06,927 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 6
+2025-11-25 16:01:58,410 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 6
+2025-11-25 16:09:00,464 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 6
+2025-11-25 16:12:10,649 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 6

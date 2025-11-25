@@ -4,18 +4,22 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
 from config.database import SessionLocal
+from core.models import Proyecto, Plantilla
 from core.project_service import ProjectService
+
+from ui.modules.plantillas.formulario_plantilla import FormularioPlantilla
 
 class DashboardPlantillas(QWidget):
     """Dashboard de plantillas para un proyecto específico"""
     volver_a_proyectos = pyqtSignal()
     
-    def __init__(self, usuario, proyecto_id):
+    def __init__(self, usuario, proyecto_id, stacked_widget=None):
         super().__init__()
         self.usuario = usuario
         self.proyecto_id = proyecto_id
         self.proyecto = None
         self.plantillas = []
+        self.stacked_widget = stacked_widget
         self.setup_ui()
         self.cargar_datos_proyecto()
         self.cargar_plantillas()
@@ -67,7 +71,7 @@ class DashboardPlantillas(QWidget):
         layout.addLayout(header_layout)
         
         # Información del proyecto
-        self.lbl_titulo = QLabel()
+        self.lbl_titulo = QLabel("Cargando proyecto...")
         self.lbl_titulo.setFont(QFont("Arial", 16, QFont.Weight.Bold))
         self.lbl_titulo.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.lbl_titulo)
@@ -112,39 +116,62 @@ class DashboardPlantillas(QWidget):
         layout.addWidget(self.lbl_sin_plantillas)
         self.lbl_sin_plantillas.hide()
         
+        # Mensaje de error
+        self.lbl_error = QLabel()
+        self.lbl_error.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_error.setStyleSheet("color: #dc3545; padding: 20px;")
+        self.lbl_error.setWordWrap(True)
+        layout.addWidget(self.lbl_error)
+        self.lbl_error.hide()
+        
         self.setLayout(layout)
     
     def cargar_datos_proyecto(self):
-        """Carga la información del proyecto"""
+        """Carga la información del proyecto con manejo robusto de errores"""
         db = SessionLocal()
         try:
-            self.proyecto = db.query(ProjectService.Proyecto).filter(
-                ProjectService.Proyecto.id == self.proyecto_id
-            ).first()
+            # Consulta DIRECTA y SIMPLE
+            self.proyecto = db.query(Proyecto).filter(Proyecto.id == self.proyecto_id).first()
             
             if self.proyecto:
                 self.lbl_titulo.setText(f"Proyecto: {self.proyecto.nombre}")
                 self.lbl_descripcion.setText(self.proyecto.descripcion or "Sin descripción")
+                self.lbl_error.hide()
             else:
                 self.lbl_titulo.setText("Proyecto no encontrado")
+                self.lbl_error.setText(f"El proyecto con ID {self.proyecto_id} no existe en la base de datos")
+                self.lbl_error.show()
                 
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error cargando proyecto: {str(e)}")
+            error_msg = f"Error cargando proyecto: {str(e)}"
+            print(f"DEBUG - {error_msg}")  # Para debugging
+            self.lbl_titulo.setText("Error al cargar proyecto")
+            self.lbl_error.setText(error_msg)
+            self.lbl_error.show()
         finally:
             db.close()
     
     def cargar_plantillas(self):
         """Carga las plantillas del proyecto"""
+        # Primero verificar que el proyecto se cargó correctamente
+        if not self.proyecto:
+            return
+            
         db = SessionLocal()
         try:
-            project_service = ProjectService(db)
-            self.plantillas = project_service.obtener_plantillas_proyecto(self.proyecto_id, self.usuario)
+            # Método DIRECTO sin usar ProjectService para evitar problemas
+            self.plantillas = db.query(Plantilla).filter(
+                Plantilla.proyecto_id == self.proyecto_id,
+                Plantilla.activa == True
+            ).all()
+            
             self.mostrar_plantillas()
             
-        except PermissionError as e:
-            QMessageBox.warning(self, "Permisos Insuficientes", str(e))
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error cargando plantillas: {str(e)}")
+            error_msg = f"Error cargando plantillas: {str(e)}"
+            print(f"DEBUG - {error_msg}")  # Para debugging
+            self.lbl_error.setText(f"{self.lbl_error.text()}\n{error_msg}" if self.lbl_error.text() else error_msg)
+            self.lbl_error.show()
         finally:
             db.close()
     
@@ -260,16 +287,40 @@ class DashboardPlantillas(QWidget):
         """Usa la plantilla seleccionada"""
         QMessageBox.information(self, "Usar Plantilla", 
                               f"Plantilla {plantilla_id} seleccionada. Preparando emisor de documentos...")
-        # TODO: Implementar navegación al emisor de documentos
-    
-    def editar_plantilla(self, plantilla_id):
-        """Edita la plantilla seleccionada"""
-        QMessageBox.information(self, "Editar Plantilla", 
-                              f"Editando plantilla {plantilla_id}. Abriendo editor...")
-        # TODO: Implementar editor de plantillas
-    
+        
     def crear_nueva_plantilla(self):
         """Crea una nueva plantilla"""
-        QMessageBox.information(self, "Nueva Plantilla", 
-                              "Formulario de nueva plantilla en desarrollo")
-        # TODO: Implementar creación de plantillas
+        print(f"DEBUG: crear_nueva_plantilla() llamado")
+        print(f"DEBUG: stacked_widget = {self.stacked_widget}")
+        print(f"DEBUG: usuario.rol = {self.usuario.rol}")
+        
+        if self.stacked_widget:
+            print("DEBUG: Creando FormularioPlantilla...")
+            formulario = FormularioPlantilla(self.usuario, self.proyecto_id)
+            formulario.plantilla_guardada.connect(self.on_plantilla_guardada)
+            
+            self.stacked_widget.addWidget(formulario)
+            self.stacked_widget.setCurrentWidget(formulario)
+            print("DEBUG: Formulario mostrado correctamente")
+        else:
+            print("DEBUG: stacked_widget es None, mostrando fallback")
+            QMessageBox.information(self, "Nueva Plantilla", 
+                                "Formulario de nueva plantilla listo para implementar")
+
+    def editar_plantilla(self, plantilla_id):
+        """Edita la plantilla seleccionada"""
+        if self.stacked_widget:
+            formulario = FormularioPlantilla(self.usuario, self.proyecto_id, plantilla_id)
+            formulario.plantilla_guardada.connect(self.on_plantilla_guardada)
+            
+            self.stacked_widget.addWidget(formulario)
+            self.stacked_widget.setCurrentWidget(formulario)
+        else:
+            QMessageBox.information(self, "Editar Plantilla", 
+                                f"Editando plantilla {plantilla_id}")
+
+    def on_plantilla_guardada(self):
+        """Cuando se guarda una plantilla"""
+        self.cargar_plantillas()
+        if self.stacked_widget:
+            self.stacked_widget.setCurrentWidget(self)

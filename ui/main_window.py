@@ -90,11 +90,6 @@ class MainWindow(QMainWindow):
         self.stacked_widget.setCurrentWidget(self.dashboard_proyectos)
         self.dashboard_proyectos.cargar_proyectos()
     
-    def on_proyecto_seleccionado(self, proyecto_id):
-        """Cuando se selecciona un proyecto desde el dashboard"""
-        QMessageBox.information(self, "Proyecto Seleccionado", 
-                              f"Proyecto {proyecto_id} seleccionado. Navegando a plantillas...")
-    
     def show_plantillas(self):
         QMessageBox.information(self, "Plantillas", "Módulo de plantillas en desarrollo")
     
@@ -112,13 +107,16 @@ class MainWindow(QMainWindow):
 
     def on_proyecto_seleccionado(self, proyecto_id):
         """Cuando se selecciona un proyecto desde el dashboard"""
+        print(f"DEBUG: Navegando al proyecto {proyecto_id}")
+        
         # Crear dashboard de plantillas para el proyecto seleccionado
-        dashboard_plantillas = DashboardPlantillas(self.usuario, proyecto_id)
+        dashboard_plantillas = DashboardPlantillas(self.usuario, proyecto_id, self.stacked_widget)
         dashboard_plantillas.volver_a_proyectos.connect(self.mostrar_dashboard_proyectos)
         
         # Agregar al stacked widget y mostrar
         self.stacked_widget.addWidget(dashboard_plantillas)
         self.stacked_widget.setCurrentWidget(dashboard_plantillas)
+        print(f"DEBUG: Dashboard de plantillas creado y mostrado")
     
     def logout(self):
         reply = QMessageBox.question(

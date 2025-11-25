@@ -5,15 +5,16 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
 from config.database import SessionLocal
 from core.project_service import ProjectService
+from core.models import Proyecto  # ← IMPORTAR DIRECTAMENTE
 
 class FormularioProyecto(QWidget):
     """Formulario para crear/editar proyectos"""
-    proyecto_guardado = pyqtSignal()  # Emite cuando se guarda exitosamente
+    proyecto_guardado = pyqtSignal()
     
     def __init__(self, usuario, proyecto_id=None):
         super().__init__()
         self.usuario = usuario
-        self.proyecto_id = proyecto_id  # None para nuevo, ID para edición
+        self.proyecto_id = proyecto_id
         self.proyecto = None
         self.setup_ui()
         self.cargar_datos_existentes()
@@ -51,7 +52,7 @@ class FormularioProyecto(QWidget):
         self.combo_padron = QComboBox()
         self.combo_padron.addItems([
             "padron_completo_pensiones",
-            "padron_activos",
+            "padron_activos", 
             "padron_historicos"
         ])
         self.combo_padron.setEditable(True)
@@ -113,30 +114,33 @@ class FormularioProyecto(QWidget):
         self.setLayout(layout)
     
     def cargar_datos_existentes(self):
-        """Carga datos existentes si es edición"""
-        if self.proyecto_id:
-            db = SessionLocal()
-            try:
-                project_service = ProjectService(db)
-                self.proyecto = db.query(type(self.proyecto)).filter(
-                    type(self.proyecto).id == self.proyecto_id
-                ).first()
+        """Carga datos existentes si es edición - VERSIÓN CORREGIDA"""
+        if not self.proyecto_id:
+            return  # No hay nada que cargar para nuevo proyecto
+        
+        db = SessionLocal()
+        try:
+            # CONSULTA DIRECTA Y SIMPLE - CORREGIDA
+            self.proyecto = db.query(Proyecto).filter(Proyecto.id == self.proyecto_id).first()
+            
+            if self.proyecto:
+                self.txt_nombre.setText(self.proyecto.nombre)
+                self.txt_descripcion.setText(self.proyecto.descripcion or "")
                 
-                if self.proyecto:
-                    self.txt_nombre.setText(self.proyecto.nombre)
-                    self.txt_descripcion.setText(self.proyecto.descripcion or "")
-                    
-                    if self.proyecto.tabla_padron:
-                        index = self.combo_padron.findText(self.proyecto.tabla_padron)
-                        if index >= 0:
-                            self.combo_padron.setCurrentIndex(index)
-                        else:
-                            self.combo_padron.setEditText(self.proyecto.tabla_padron)
+                if self.proyecto.tabla_padron:
+                    index = self.combo_padron.findText(self.proyecto.tabla_padron)
+                    if index >= 0:
+                        self.combo_padron.setCurrentIndex(index)
+                    else:
+                        self.combo_padron.setEditText(self.proyecto.tabla_padron)
+            else:
+                QMessageBox.warning(self, "Advertencia", f"No se encontró el proyecto con ID {self.proyecto_id}")
                 
-            except Exception as e:
-                QMessageBox.critical(self, "Error", f"Error cargando proyecto: {str(e)}")
-            finally:
-                db.close()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error cargando proyecto: {str(e)}")
+            print(f"DEBUG - Error en cargar_datos_existentes: {e}")  # Para debugging
+        finally:
+            db.close()
     
     def validar_formulario(self):
         """Valida los datos del formulario"""
@@ -181,7 +185,7 @@ class FormularioProyecto(QWidget):
                 # Creación
                 project_service.crear_proyecto(
                     datos['nombre'],
-                    datos['descripcion'],
+                    datos['descripcion'], 
                     datos['tabla_padron'],
                     self.usuario
                 )
@@ -195,6 +199,7 @@ class FormularioProyecto(QWidget):
             QMessageBox.warning(self, "Permisos Insuficientes", str(e))
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error guardando proyecto: {str(e)}")
+            print(f"DEBUG - Error en guardar_proyecto: {e}")  # Para debugging
             db.rollback()
         finally:
             db.close()

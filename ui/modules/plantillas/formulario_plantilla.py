@@ -7,6 +7,8 @@ from config.database import SessionLocal
 from core.models import Plantilla, Proyecto
 import os
 
+from ui.modules.plantillas.editor_plantillas import EditorPlantillas
+
 class FormularioPlantilla(QWidget):
     """Formulario para crear/editar plantillas"""
     plantilla_guardada = pyqtSignal()
@@ -315,23 +317,25 @@ class FormularioPlantilla(QWidget):
     
     def abrir_editor_visual(self):
         """Abre el editor visual de plantillas"""
-        archivo_pdf = self.txt_archivo.text().strip()
-        if not archivo_pdf or not os.path.exists(archivo_pdf):
-            QMessageBox.warning(self, "Error", "Primero debe seleccionar un archivo PDF válido")
+        if not self.plantilla_id:
+            QMessageBox.warning(self, "Error", "Debe guardar la plantilla primero antes de editarla")
             return
         
-        QMessageBox.information(
-            self, 
-            "Editor Visual de Plantillas", 
-            f"🎨 Editor visual en desarrollo...\n\n"
-            f"📄 Archivo: {os.path.basename(archivo_pdf)}\n"
-            f"📍 Funcionalidades próximas:\n"
-            f"   • Posicionamiento por coordenadas\n"
-            f"   • Campos dinámicos arrastrables\n"
-            f"   • Previsualización en tiempo real\n"
-            f"   • Validación de campos vs CSV\n\n"
-            f"Esta funcionalidad se implementará en la Semana 5-6."
-        )
+        if hasattr(self, 'stacked_widget') and self.stacked_widget:
+            editor = EditorPlantillas(self.usuario, self.plantilla_id)
+            editor.plantilla_guardada.connect(self.on_plantilla_editada)
+            
+            self.stacked_widget.addWidget(editor)
+            self.stacked_widget.setCurrentWidget(editor)
+        else:
+            QMessageBox.information(self, "Editor Visual", 
+                                "Editor visual disponible en contexto de navegación")
+            
+    def on_plantilla_editada(self):
+        """Cuando se guarda la plantilla desde el editor"""
+        if hasattr(self, 'stacked_widget') and self.stacked_widget:
+            self.stacked_widget.setCurrentWidget(self)
+        QMessageBox.information(self, "Éxito", "Configuración de plantilla guardada")
     
     def cancelar(self):
         """Cancela la operación"""

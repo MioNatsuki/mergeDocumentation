@@ -8,6 +8,8 @@ from core.models import Proyecto, Plantilla
 from core.project_service import ProjectService
 
 from ui.modules.plantillas.formulario_plantilla import FormularioPlantilla
+from ui.modules.procesamiento.cargador_csv import CargadorCSV
+from ui.modules.generador_pdf.emisor_documentos import EmisorDocumentos
 
 class DashboardPlantillas(QWidget):
     """Dashboard de plantillas para un proyecto específico"""
@@ -48,6 +50,45 @@ class DashboardPlantillas(QWidget):
         header_layout.addWidget(btn_volver)
         
         header_layout.addStretch()
+
+        # Botón cargar CSV (todos los roles)
+        btn_cargar_csv = QPushButton("📁 Cargar CSV")
+        btn_cargar_csv.clicked.connect(self.cargar_csv)
+        btn_cargar_csv.setStyleSheet("""
+            QPushButton {
+                background-color: #17a2b8;
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #138496;
+            }
+        """)
+        header_layout.addWidget(btn_cargar_csv)
+        
+        # Botón nueva plantilla (solo admin/superadmin)
+        if self.usuario.rol in ["superadmin", "admin"]:
+            btn_nueva = QPushButton("+ Nueva Plantilla")
+            btn_nueva.clicked.connect(self.crear_nueva_plantilla)
+            btn_nueva.setStyleSheet("""
+                QPushButton {
+                    background-color: #4CAF50;
+                    color: white;
+                    border: none;
+                    padding: 8px 16px;
+                    border-radius: 4px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #45a049;
+                }
+            """)
+            header_layout.addWidget(btn_nueva)
+        
+        layout.addLayout(header_layout)
         
         # Botón nueva plantilla (solo admin/superadmin)
         if self.usuario.rol in ["superadmin", "admin"]:
@@ -151,6 +192,80 @@ class DashboardPlantillas(QWidget):
         finally:
             db.close()
     
+    def cargar_csv(self):
+        """Abre el cargador de CSV"""
+        print("DEBUG: Abriendo cargador CSV")
+        
+        if self.stacked_widget:
+            try:
+                cargador_csv = CargadorCSV(self.usuario, self.proyecto_id)
+                cargador_csv.procesamiento_completado.connect(self.on_csv_procesado)
+                
+                self.stacked_widget.addWidget(cargador_csv)
+                self.stacked_widget.setCurrentWidget(cargador_csv)
+                print("DEBUG: Cargador CSV mostrado exitosamente")
+            except Exception as e:
+                print(f"DEBUG: Error abriendo cargador CSV: {e}")
+                QMessageBox.critical(self, "Error", f"No se pudo abrir el cargador CSV: {str(e)}")
+        else:
+            QMessageBox.information(self, "Cargar CSV", 
+                                "Funcionalidad de carga CSV disponible en contexto de navegación")
+
+    def on_csv_procesado(self, sesion_id: str):
+        """Cuando se completa el procesamiento de CSV"""
+        print(f"DEBUG: CSV procesado - Sesión: {sesion_id}")
+        # Aquí podríamos navegar automáticamente al emisor de documentos
+        QMessageBox.information(
+            self,
+            "CSV Procesado",
+            f"✅ CSV procesado exitosamente.\n\nSesión: {sesion_id}\n\n"
+            f"Ahora puede generar los documentos PDF."
+        )
+
+    def usar_plantilla(self, plantilla_id):
+        """Usa la plantilla seleccionada para generar documentos"""
+        print(f"DEBUG: Usando plantilla {plantilla_id} para generación")
+        
+        if self.stacked_widget:
+            try:
+                emisor = EmisorDocumentos(self.usuario, self.proyecto_id, plantilla_id, self.sesion_id_csv)
+                emisor.generacion_completada.connect(self.on_generacion_completada)
+                
+                self.stacked_widget.addWidget(emisor)
+                self.stacked_widget.setCurrentWidget(emisor)
+                print("DEBUG: Emisor de documentos mostrado exitosamente")
+            except Exception as e:
+                print(f"DEBUG: Error abriendo emisor: {e}")
+                QMessageBox.critical(self, "Error", f"No se pudo abrir el emisor: {str(e)}")
+        else:
+            QMessageBox.information(self, "Usar Plantilla", 
+                                f"Plantilla {plantilla_id} seleccionada")
+
+    def on_csv_procesado(self, sesion_id: str):
+        """Cuando se completa el procesamiento de CSV"""
+        print(f"DEBUG: CSV procesado - Sesión: {sesion_id}")
+        self.sesion_id_csv = sesion_id  # Guardar para usar en el emisor
+        
+        # Preguntar si quiere generar documentos ahora
+        reply = QMessageBox.question(
+            self,
+            "CSV Procesado",
+            f"✅ CSV procesado exitosamente.\n\n¿Desea generar los documentos PDF ahora?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            # Navegar al emisor de documentos
+            if self.stacked_widget and hasattr(self, 'sesion_id_csv'):
+                emisor = EmisorDocumentos(self.usuario, self.proyecto_id, None, self.sesion_id_csv)
+                self.stacked_widget.addWidget(emisor)
+                self.stacked_widget.setCurrentWidget(emisor)
+
+    def on_generacion_completada(self):
+        """Cuando se completa la generación de documentos"""
+        print("DEBUG: Generación de documentos completada")
+        # Podríamos navegar de vuelta o mostrar resumen
+
     def cargar_plantillas(self):
         """Carga las plantillas del proyecto"""
         # Primero verificar que el proyecto se cargó correctamente

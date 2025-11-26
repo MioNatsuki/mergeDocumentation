@@ -8,6 +8,8 @@ from utils.logger import auditoria
 # Importar módulos nuevos
 from ui.modules.proyectos.dashboard_proyectos import DashboardProyectos
 from ui.modules.plantillas.dashboard_plantillas import DashboardPlantillas
+from ui.modules.estadisticas.dashboard_estadisticas import DashboardEstadisticas
+from ui.modules.configuracion.panel_configuracion import PanelConfiguracion
 
 class MainWindow(QMainWindow):
     def __init__(self, usuario: Usuario):
@@ -51,6 +53,27 @@ class MainWindow(QMainWindow):
         action_seleccionar = QAction("Seleccionar Proyecto", self)
         action_seleccionar.triggered.connect(self.mostrar_dashboard_proyectos)
         menu_proyectos.addAction(action_seleccionar)
+
+        if self.usuario.rol == "superadmin":
+            menu_config = menubar.addMenu("&Configuración")
+            
+            action_estadisticas = QAction("📊 Estadísticas y Reportes", self)
+            action_estadisticas.triggered.connect(self.mostrar_estadisticas)
+            menu_config.addAction(action_estadisticas)
+            
+            action_config_sistema = QAction("⚙️ Configuración del Sistema", self)
+            action_config_sistema.triggered.connect(self.mostrar_configuracion)
+            menu_config.addAction(action_config_sistema)
+            
+            menu_config.addSeparator()
+            
+            action_usuarios = QAction("👥 Gestión de Usuarios", self)
+            action_usuarios.triggered.connect(self.show_gestion_usuarios)
+            menu_config.addAction(action_usuarios)
+            
+            action_auditoria = QAction("📋 Auditoría", self)
+            action_auditoria.triggered.connect(self.show_auditoria)
+            menu_config.addAction(action_auditoria)
         
         # Menú Plantillas (según rol)
         if self.usuario.rol in ["superadmin", "admin"]:
@@ -117,6 +140,18 @@ class MainWindow(QMainWindow):
         self.stacked_widget.addWidget(dashboard_plantillas)
         self.stacked_widget.setCurrentWidget(dashboard_plantillas)
         print(f"DEBUG: Dashboard de plantillas creado y mostrado")
+
+    def mostrar_estadisticas(self):
+        """Muestra el dashboard de estadísticas"""
+        estadisticas = DashboardEstadisticas(self.usuario, self.proyecto_actual)
+        self.stacked_widget.addWidget(estadisticas)
+        self.stacked_widget.setCurrentWidget(estadisticas)
+
+    def mostrar_configuracion(self):
+        """Muestra el panel de configuración del sistema"""
+        configuracion = PanelConfiguracion(self.usuario)
+        self.stacked_widget.addWidget(configuracion)
+        self.stacked_widget.setCurrentWidget(configuracion)
     
     def logout(self):
         reply = QMessageBox.question(

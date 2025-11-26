@@ -103,7 +103,24 @@ class EmisionTemp(Base):
     fecha_carga = Column(DateTime(timezone=True), server_default=func.now())
     sesion_id = Column(String(100))
 
-"""
+class EmisionesAcumuladas(Base):
+    __tablename__ = "emisiones_acumuladas"
+    __table_args__ = {'extend_existing': True}
+    
+    id = Column(Integer, primary_key=True, index=True)
+    proyecto_id = Column(Integer, ForeignKey("proyectos.id"))
+    plantilla_id = Column(Integer, ForeignKey("plantillas.id"))
+    usuario_id = Column(Integer, ForeignKey("usuarios.id"))
+    cuenta = Column(String(50))
+    codigo_afiliado = Column(String(50))
+    nombre_afiliado = Column(String(200))
+    datos_completos = Column(JSON)
+    nombre_archivo = Column(String(255))
+    ruta_archivo = Column(String(500))
+    fecha_emision = Column(DateTime(timezone=True))
+    fecha_registro = Column(DateTime(timezone=True), server_default=func.now())
+
+# Asegurar que EmisionFinal esté completo
 class EmisionFinal(Base):
     __tablename__ = "emisiones_final"
     __table_args__ = {'extend_existing': True}
@@ -118,15 +135,3 @@ class EmisionFinal(Base):
     fecha_generacion = Column(DateTime(timezone=True))
     estado_generacion = Column(String(20))
     fecha_creacion = Column(DateTime(timezone=True), server_default=func.now())
-
-class ConfiguracionSistema(Base):
-    __tablename__ = "configuracion_sistema"
-    __table_args__ = {'extend_existing': True}
-    
-    id = Column(Integer, primary_key=True, index=True)
-    clave = Column(String(50), unique=True, nullable=False)
-    valor = Column(Text)
-    tipo = Column(String(20))
-    descripcion = Column(Text)
-    editable = Column(Boolean, default=True)
-"""

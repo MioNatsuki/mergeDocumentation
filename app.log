@@ -50,3 +50,25 @@ LINE 1: ..., user_agent) VALUES (5, 'login', 'auth', 'null', 'localhost...
 2025-11-25 16:01:58,410 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 6
 2025-11-25 16:09:00,464 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 6
 2025-11-25 16:12:10,649 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 6
+2025-11-26 11:11:34,912 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 1
+2025-11-26 15:27:10,810 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 1
+2025-11-26 16:51:36,314 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 1
+2025-11-26 17:03:35,555 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 1
+2025-11-26 17:04:14,753 - correspondencia_app - INFO - AUDITORIA - auth.logout - Usuario: 1
+2025-11-26 17:09:07,269 - correspondencia_app - INFO - AUDITORIA - auth.login_fallido - Usuario: None
+2025-11-26 17:09:10,177 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 1
+2025-11-26 17:09:54,494 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 1
+2025-11-26 17:13:21,311 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 1
+2025-11-26 17:14:59,238 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 1
+2025-11-26 17:15:50,485 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 1
+2025-11-26 17:18:09,160 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 1
+2025-11-27 12:11:10,019 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 1
+2025-11-27 13:01:49,939 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 1
+2025-11-27 13:28:07,964 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 1
+2025-11-27 13:38:14,646 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 1
+2025-11-27 14:24:52,663 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 1
+2025-12-01 16:35:19,908 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 1
+2025-12-01 16:39:30,637 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 1
+2025-12-01 16:41:36,523 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 1
+2025-12-01 16:43:51,619 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 1
+2025-12-01 16:56:08,798 - correspondencia_app - ERROR - Error en auditoría: One or more mappers failed to initialize - can't proceed with initialization of other mappers. Triggering mapper: 'Mapper[Plantilla(plantillas)]'. Original exception was: Mapper 'Mapper[Proyecto(proyectos)]' has no property 'plantillas'.  If this property was indicated from other mappers or configure events, ensure registry.configure() has been called.

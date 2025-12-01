@@ -1,8 +1,9 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, JSON, ForeignKey
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, JSON, ForeignKey, Numeric, Date
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from config.database import Base
 import bcrypt
+import uuid
 
 class Usuario(Base):
     __tablename__ = "usuarios"
@@ -18,9 +19,9 @@ class Usuario(Base):
     ultimo_login = Column(DateTime(timezone=True))
     proyecto_permitido = Column(String(200))
     
-    # Relaciones SIMPLIFICADAS - solo las esenciales por ahora
+    # Relaciones - simplificadas para evitar problemas
     bitacoras = relationship("Bitacora", back_populates="usuario")
-    
+
     def set_password(self, password):
         """Encripta y establece la contraseña"""
         salt = bcrypt.gensalt(rounds=12)
@@ -43,15 +44,26 @@ class Proyecto(Base):
     id = Column(Integer, primary_key=True, index=True)
     nombre = Column(String(100), nullable=False)
     descripcion = Column(Text)
-    tabla_padron = Column(String(50))
+    tabla_padron = Column(String(100))  # ← Almacena UUID de identificador_padrones!
     activo = Column(Boolean, default=True)
     fecha_creacion = Column(DateTime(timezone=True), server_default=func.now())
     config_json = Column(JSON)
+    is_deleted = Column(Boolean, default=False)
+    logo = Column(String(500))
     
-    # SOLO relaciones esenciales - comentar las que causan problemas
+    # Relaciones simplificadas - comentar las problemáticas temporalmente
     plantillas = relationship("Plantilla", back_populates="proyecto")
-    emisiones_temp = relationship("EmisionTemp", back_populates="proyecto")
-    # emisiones_final = relationship("EmisionFinal", back_populates="proyecto")
+
+class IdentificadorPadrones(Base):
+    __tablename__ = "identificador_padrones"
+    __table_args__ = {'extend_existing': True}
+    
+    id = Column(Integer, primary_key=True, index=True)
+    nombre = Column(String(100), unique=True, nullable=False)  # Nombre humano
+    uuid_padron = Column(String(100), unique=True, nullable=False)  # UUID único
+    descripcion = Column(Text)
+    activo = Column(Boolean, default=True)
+    fecha_creacion = Column(DateTime(timezone=True), server_default=func.now())
 
 class Plantilla(Base):
     __tablename__ = "plantillas"
@@ -68,7 +80,7 @@ class Plantilla(Base):
     fecha_creacion = Column(DateTime(timezone=True), server_default=func.now())
     usuario_creador = Column(Integer, ForeignKey("usuarios.id"))
     
-    # Relación
+    # Relación básica
     proyecto = relationship("Proyecto", back_populates="plantillas")
 
 class Bitacora(Base):
@@ -80,13 +92,12 @@ class Bitacora(Base):
     accion = Column(String(50), nullable=False)
     modulo = Column(String(50), nullable=False)
     detalles = Column(JSON)
-    ip_address = Column(String(45))  # Cambiado a String para evitar problemas con inet
+    ip_address = Column(String(45))
     user_agent = Column(Text)
     fecha_evento = Column(DateTime(timezone=True), server_default=func.now())
     
     usuario = relationship("Usuario", back_populates="bitacoras")
 
-# Modelos TEMPORALMENTE COMENTADOS hasta que los necesitemos
 class EmisionTemp(Base):
     __tablename__ = "emisiones_temp"
     __table_args__ = {'extend_existing': True}
@@ -102,6 +113,31 @@ class EmisionTemp(Base):
     error_mensaje = Column(Text)
     fecha_carga = Column(DateTime(timezone=True), server_default=func.now())
     sesion_id = Column(String(100))
+    
+    # Relaciones básicas sin back_populates problemático
+    # proyecto = relationship("Proyecto")
+    # plantilla = relationship("Plantilla")
+    # usuario = relationship("Usuario")
+
+class EmisionFinal(Base):
+    __tablename__ = "emisiones_final"
+    __table_args__ = {'extend_existing': True}
+    
+    id = Column(Integer, primary_key=True, index=True)
+    emision_temp_id = Column(Integer)
+    proyecto_id = Column(Integer, ForeignKey("proyectos.id"))
+    plantilla_id = Column(Integer, ForeignKey("plantillas.id"))
+    usuario_id = Column(Integer, ForeignKey("usuarios.id"))
+    datos_completos = Column(JSON)
+    archivo_generado = Column(String(255))
+    fecha_generacion = Column(DateTime(timezone=True))
+    estado_generacion = Column(String(20))
+    fecha_creacion = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relaciones básicas
+    # proyecto = relationship("Proyecto")
+    # plantilla = relationship("Plantilla")
+    # usuario = relationship("Usuario")
 
 class EmisionesAcumuladas(Base):
     __tablename__ = "emisiones_acumuladas"
@@ -119,19 +155,19 @@ class EmisionesAcumuladas(Base):
     ruta_archivo = Column(String(500))
     fecha_emision = Column(DateTime(timezone=True))
     fecha_registro = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relaciones básicas
+    # proyecto = relationship("Proyecto")
+    # plantilla = relationship("Plantilla")
+    # usuario = relationship("Usuario")
 
-# Asegurar que EmisionFinal esté completo
-class EmisionFinal(Base):
-    __tablename__ = "emisiones_final"
+class ConfiguracionSistema(Base):
+    __tablename__ = "configuracion_sistema"
     __table_args__ = {'extend_existing': True}
     
     id = Column(Integer, primary_key=True, index=True)
-    emision_temp_id = Column(Integer)
-    proyecto_id = Column(Integer, ForeignKey("proyectos.id"))
-    plantilla_id = Column(Integer, ForeignKey("plantillas.id"))
-    usuario_id = Column(Integer, ForeignKey("usuarios.id"))
-    datos_completos = Column(JSON)
-    archivo_generado = Column(String(255))
-    fecha_generacion = Column(DateTime(timezone=True))
-    estado_generacion = Column(String(20))
-    fecha_creacion = Column(DateTime(timezone=True), server_default=func.now())
+    clave = Column(String(50), unique=True, nullable=False)
+    valor = Column(Text)
+    tipo = Column(String(20))
+    descripcion = Column(Text)
+    editable = Column(Boolean, default=True)

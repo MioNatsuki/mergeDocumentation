@@ -8,14 +8,17 @@ class ProjectService:
         self.db = db
     
     def obtener_proyectos_usuario(self, usuario: Usuario) -> List[Proyecto]:
-        """Obtiene proyectos visibles para el usuario según su rol"""
+        """Obtiene proyectos visibles para el usuario (sin eliminados)"""
         try:
+            base_query = self.db.query(Proyecto).filter(
+                Proyecto.activo == True,
+                Proyecto.is_deleted == False  # ← ESTA LÍNEA ES CRÍTICA
+            )
+            
             if usuario.rol == "superadmin":
-                return self.db.query(Proyecto).filter(Proyecto.activo == True).all()
-            
+                return base_query.all()
             elif usuario.rol == "admin":
-                return self.db.query(Proyecto).filter(Proyecto.activo == True).all()
-            
+                return base_query.all()
             else:  # lector
                 if not usuario.proyecto_permitido:
                     return []
@@ -28,19 +31,15 @@ class ProjectService:
                 if not proyectos_permitidos:
                     return []
                 
-                return self.db.query(Proyecto).filter(
-                    and_(
-                        Proyecto.activo == True,
-                        Proyecto.id.in_(proyectos_permitidos)
-                    )
-                ).all()
+                return base_query.filter(Proyecto.id.in_(proyectos_permitidos)).all()
                 
         except Exception as e:
             print(f"DEBUG - Error en obtener_proyectos_usuario: {e}")
             return []
     
-    def crear_proyecto(self, nombre: str, descripcion: str, tabla_padron: str, usuario: Usuario) -> Proyecto:
-        """Crea un nuevo proyecto"""
+    def crear_proyecto(self, nombre: str, descripcion: str, tabla_padron: str, 
+                   usuario: Usuario, logo_path: str = None, uuid_padron: str = None) -> Proyecto:
+        """Crea un nuevo proyecto con logo"""
         if usuario.rol not in ["superadmin", "admin"]:
             raise PermissionError("No tiene permisos para crear proyectos")
         
@@ -49,7 +48,9 @@ class ProjectService:
                 nombre=nombre,
                 descripcion=descripcion,
                 tabla_padron=tabla_padron,
-                config_json={}
+                logo_path=logo_path,
+                uuid_padron=uuid_padron,
+                config_json={"uuid_padron": uuid_padron}
             )
             
             self.db.add(proyecto)
@@ -86,7 +87,7 @@ class ProjectService:
             raise e
     
     def eliminar_proyecto(self, proyecto_id: int, usuario: Usuario) -> bool:
-        """Elimina un proyecto (soft delete)"""
+        """Eliminación suave (soft delete)"""
         if usuario.rol != "superadmin":
             raise PermissionError("Solo superadmin puede eliminar proyectos")
         
@@ -95,7 +96,7 @@ class ProjectService:
             if not proyecto:
                 raise ValueError("Proyecto no encontrado")
             
-            proyecto.activo = False
+            proyecto.is_deleted = True
             self.db.commit()
             
             return True

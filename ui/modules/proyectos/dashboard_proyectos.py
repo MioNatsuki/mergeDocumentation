@@ -17,94 +17,220 @@ class DashboardProyectos(QWidget):
         super().__init__()
         self.usuario = usuario
         self.proyectos = []
-        self.stacked_widget = stacked_widget  # Recibir referencia al stacked_widget
+        self.proyectos_filtrados = []
+        self.stacked_widget = stacked_widget
         self.setup_ui()
         self.cargar_proyectos()
     
     def setup_ui(self):
         layout = QVBoxLayout()
         layout.setSpacing(20)
+        layout.setContentsMargins(20, 20, 20, 20)
         
         # Header
-        header_layout = QHBoxLayout()
+        header_container = QFrame()
+        header_container.setStyleSheet("""
+            QFrame {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #99b898, stop:0.5 #fecea8, stop:1 #ff847c);
+                border-radius: 12px;
+                padding: 15px;
+            }
+        """)
+        
+        header_layout = QVBoxLayout()
         
         title = QLabel("Selección de Proyectos")
-        title.setFont(QFont("Arial", 16, QFont.Weight.Bold))
+        title.setFont(QFont("Jura", 20, QFont.Weight.Bold))
+        title.setStyleSheet("color: #2a363b;")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         header_layout.addWidget(title)
         
-        header_layout.addStretch()
+        #header_layout.addStretch()
+
+        subtitle = QLabel(f"Bienvenido, {self.usuario.nombre} - {self.usuario.rol.capitalize()}")
+        subtitle.setFont(QFont("Jura", 12))
+        subtitle.setStyleSheet("color: #2a363b; opacity: 0.9;")
+        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        header_layout.addWidget(subtitle)
+
+        header_container.setLayout(header_layout)
+        layout.addWidget(header_container)
         
-        # Botón nuevo proyecto (solo admin/superadmin)
-        if self.usuario.rol in ["superadmin", "admin"]:
-            btn_nuevo = QPushButton("Nuevo Proyecto")
-            btn_nuevo.clicked.connect(self.crear_nuevo_proyecto)
-            btn_nuevo.setStyleSheet("""
-                QPushButton {
-                    background-color: #4CAF50;
-                    color: white;
-                    border: none;
-                    padding: 8px 16px;
-                    border-radius: 4px;
-                    font-weight: bold;
-                }
-                QPushButton:hover {
-                    background-color: #45a049;
-                }
-            """)
-            header_layout.addWidget(btn_nuevo)
+        # BARRA DE HERRAMIENTAS
+        toolbar = QFrame()
+        toolbar_layout = QHBoxLayout()
+
+        # Búsqueda
+        search_container = QFrame()
+        search_container.setStyleSheet("""
+            QFrame {
+                background-color: #ffffff;
+                border: 2px solid #99b898;
+                border-radius: 8px;
+                padding: 5px;
+            }
+        """)
+        search_layout = QHBoxLayout()
         
-        layout.addLayout(header_layout)
+        self.txt_buscar = QLineEdit()
+        self.txt_buscar.setPlaceholderText("🔍 Buscar proyectos...")
+        self.txt_buscar.setFont(QFont("Jura", 10))
+        self.txt_buscar.textChanged.connect(self.filtrar_proyectos)
+        self.txt_buscar.setStyleSheet("""
+            QLineEdit {
+                border: none;
+                background: transparent;
+                font-family: 'Jura';
+                font-size: 12px;
+            }
+            QLineEdit:focus {
+                border: none;
+            }
+        """)
+        
+        search_layout.addWidget(self.txt_buscar)
+        search_container.setLayout(search_layout)
+        toolbar_layout.addWidget(search_container)
+        
+        toolbar_layout.addStretch()
         
         # Filtros
         filter_layout = QHBoxLayout()
         
-        filter_layout.addWidget(QLabel("Buscar:"))
-        self.txt_buscar = QLineEdit()
-        self.txt_buscar.setPlaceholderText("Buscar proyectos...")
-        self.txt_buscar.textChanged.connect(self.filtrar_proyectos)
-        filter_layout.addWidget(self.txt_buscar)
-        
-        filter_layout.addWidget(QLabel("Ordenar por:"))
+        filter_layout.addWidget(QLabel("Orden:"))
         self.combo_orden = QComboBox()
         self.combo_orden.addItems(["Nombre A-Z", "Nombre Z-A", "Más recientes", "Más antiguos"])
+        self.combo_orden.setFont(QFont("Jura", 10))
         self.combo_orden.currentTextChanged.connect(self.ordenar_proyectos)
+        self.combo_orden.setStyleSheet("""
+            QComboBox {
+                background-color: #ffffff;
+                border: 2px solid #fecea8;
+                border-radius: 6px;
+                padding: 5px 10px;
+                font-family: 'Jura';
+            }
+        """)
         filter_layout.addWidget(self.combo_orden)
         
-        filter_layout.addStretch()
-        layout.addLayout(filter_layout)
+        toolbar_layout.addLayout(filter_layout)
         
-        # Área de proyectos
+        if self.usuario.rol in ["superadmin", "admin"]:
+            btn_nuevo = QPushButton("➕ Nuevo Proyecto")
+            btn_nuevo.clicked.connect(self.crear_nuevo_proyecto)
+            btn_nuevo.setFont(QFont("Jura", 11, QFont.Weight.Bold))
+            btn_nuevo.setStyleSheet("""
+                QPushButton {
+                    background-color: #ff847c;
+                    color: white;
+                    border: none;
+                    padding: 10px 20px;
+                    border-radius: 8px;
+                }
+                QPushButton:hover {
+                    background-color: #e84a5f;
+                }
+            """)
+            toolbar_layout.addWidget(btn_nuevo)
+        
+        toolbar.setLayout(toolbar_layout)
+        layout.addWidget(toolbar)
+        
+        # CONTADOR DE RESULTADOS
+        self.lbl_contador = QLabel()
+        self.lbl_contador.setFont(QFont("Jura", 10))
+        self.lbl_contador.setStyleSheet("color: #5a6b70;")
+        layout.addWidget(self.lbl_contador)
+        
+        # ÁREA DE PROYECTOS
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        scroll_area.setStyleSheet("background-color: transparent;")
         
         self.projects_container = QWidget()
         self.grid_layout = QGridLayout()
-        self.grid_layout.setSpacing(15)
+        self.grid_layout.setSpacing(20)
         self.grid_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.grid_layout.setContentsMargins(10, 10, 10, 10)
         
         self.projects_container.setLayout(self.grid_layout)
         scroll_area.setWidget(self.projects_container)
         
         layout.addWidget(scroll_area)
         
-        # Mensaje cuando no hay proyectos
-        self.lbl_sin_proyectos = QLabel("No hay proyectos disponibles para tu usuario")
+        # MENSAJES DE ESTADO
+        self.lbl_sin_proyectos = QLabel("No hay proyectos disponibles")
+        self.lbl_sin_proyectos.setFont(QFont("Jura", 14))
+        self.lbl_sin_proyectos.setStyleSheet("color: #99b898; padding: 60px;")
         self.lbl_sin_proyectos.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lbl_sin_proyectos.setFont(QFont("Arial", 12))
-        self.lbl_sin_proyectos.setStyleSheet("color: #666; padding: 40px;")
         layout.addWidget(self.lbl_sin_proyectos)
         self.lbl_sin_proyectos.hide()
         
+        self.lbl_sin_resultados = QLabel("No se encontraron proyectos que coincidan con la búsqueda")
+        self.lbl_sin_resultados.setFont(QFont("Jura", 12))
+        self.lbl_sin_resultados.setStyleSheet("color: #fecea8; padding: 40px;")
+        self.lbl_sin_resultados.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.lbl_sin_resultados)
+        self.lbl_sin_resultados.hide()
+        
         self.setLayout(layout)
+
+    def filtrar_proyectos(self, texto):
+        """Filtra proyectos por texto de búsqueda"""
+        texto = texto.lower().strip()
+        
+        if not texto:
+            self.proyectos_filtrados = self.proyectos.copy()
+        else:
+            self.proyectos_filtrados = [
+                p for p in self.proyectos 
+                if texto in p.nombre.lower() or 
+                   (p.descripcion and texto in p.descripcion.lower()) or
+                   texto in p.tabla_padron.lower()
+            ]
+        
+        self.ordenar_proyectos()
+        self.actualizar_contador()
+
+    def ordenar_proyectos(self, criterio=None):
+        """Ordena proyectos según criterio seleccionado"""
+        if not criterio:
+            criterio = self.combo_orden.currentText()
+        
+        if criterio == "Nombre A-Z":
+            self.proyectos_filtrados.sort(key=lambda x: x.nombre.lower())
+        elif criterio == "Nombre Z-A":
+            self.proyectos_filtrados.sort(key=lambda x: x.nombre.lower(), reverse=True)
+        elif criterio == "Más recientes":
+            self.proyectos_filtrados.sort(key=lambda x: x.fecha_creacion, reverse=True)
+        elif criterio == "Más antiguos":
+            self.proyectos_filtrados.sort(key=lambda x: x.fecha_creacion)
+        
+        self.mostrar_proyectos()
     
     def cargar_proyectos(self):
-        """Carga los proyectos desde la base de datos"""
+        """Carga proyectos con nombres de padrones"""
         db = SessionLocal()
         try:
             project_service = ProjectService(db)
             self.proyectos = project_service.obtener_proyectos_usuario(self.usuario)
+            
+            # Obtener nombres de padrones para cada proyecto
+            padron_service = PadronService(db)
+            self.padrones_cache = {}  # Cache de UUID -> Nombre
+            
+            for proyecto in self.proyectos:
+                if proyecto.tabla_padron and proyecto.tabla_padron not in self.padrones_cache:
+                    padron = padron_service.obtener_padron_por_uuid(proyecto.tabla_padron)
+                    if padron:
+                        self.padrones_cache[proyecto.tabla_padron] = padron.nombre
+                    else:
+                        self.padrones_cache[proyecto.tabla_padron] = f"UUID: {proyecto.tabla_padron[:8]}..."
+            
             self.mostrar_proyectos()
+            
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error cargando proyectos: {str(e)}")
         finally:
@@ -114,9 +240,7 @@ class DashboardProyectos(QWidget):
         """Muestra los proyectos en la grid"""
         # Limpiar layout
         for i in reversed(range(self.grid_layout.count())): 
-            widget = self.grid_layout.itemAt(i).widget()
-            if widget:
-                widget.setParent(None)
+            self.grid_layout.itemAt(i).widget().setParent(None)
         
         if not self.proyectos:
             self.lbl_sin_proyectos.show()
@@ -199,13 +323,3 @@ class DashboardProyectos(QWidget):
         # Si estamos en un stacked_widget, volver a este dashboard
         if self.stacked_widget:
             self.stacked_widget.setCurrentWidget(self)
-    
-    def filtrar_proyectos(self, texto):
-        """Filtra proyectos por texto"""
-        # TODO: Implementar filtrado
-        pass
-    
-    def ordenar_proyectos(self, criterio):
-        """Ordena proyectos según criterio"""
-        # TODO: Implementar ordenamiento
-        pass

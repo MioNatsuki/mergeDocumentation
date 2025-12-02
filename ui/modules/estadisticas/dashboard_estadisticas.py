@@ -82,7 +82,7 @@ class DashboardEstadisticas(QWidget):
         self.date_hasta.dateChanged.connect(self.cargar_estadisticas)
         filtros_layout.addWidget(self.date_hasta)
         
-        btn_actualizar = QPushButton("🔄 Actualizar")
+        btn_actualizar = QPushButton("Actualizar")
         btn_actualizar.clicked.connect(self.cargar_estadisticas)
         btn_actualizar.setStyleSheet("background-color: #17a2b8; color: white;")
         filtros_layout.addWidget(btn_actualizar)
@@ -95,19 +95,19 @@ class DashboardEstadisticas(QWidget):
         stats_layout.setSpacing(15)
         
         # Tarjeta 1: Total Emisiones
-        self.card_total = self.crear_tarjeta_estadistica("📊 Total Emisiones", "0", "#4CAF50")
+        self.card_total = self.crear_tarjeta_estadistica("Total Emisiones", "0", "#4CAF50")
         stats_layout.addWidget(self.card_total, 0, 0)
         
         # Tarjeta 2: Emisiones Hoy
-        self.card_hoy = self.crear_tarjeta_estadistica("📅 Emisiones Hoy", "0", "#2196F3")
+        self.card_hoy = self.crear_tarjeta_estadistica("Emisiones Hoy", "0", "#2196F3")
         stats_layout.addWidget(self.card_hoy, 0, 1)
         
         # Tarjeta 3: Emisiones Semana
-        self.card_semana = self.crear_tarjeta_estadistica("📈 Esta Semana", "0", "#FF9800")
+        self.card_semana = self.crear_tarjeta_estadistica("Esta Semana", "0", "#FF9800")
         stats_layout.addWidget(self.card_semana, 0, 2)
         
         # Tarjeta 4: Emisiones Mes
-        self.card_mes = self.crear_tarjeta_estadistica("📋 Este Mes", "0", "#F44336")
+        self.card_mes = self.crear_tarjeta_estadistica("Este Mes", "0", "#F44336")
         stats_layout.addWidget(self.card_mes, 0, 3)
         
         layout.addLayout(stats_layout)
@@ -143,15 +143,15 @@ class DashboardEstadisticas(QWidget):
         # Botones de acción
         action_layout = QHBoxLayout()
         
-        btn_reporte = QPushButton("📄 Generar Reporte PDF")
+        btn_reporte = QPushButton("Generar Reporte PDF")
         btn_reporte.clicked.connect(self.generar_reporte_pdf)
         btn_reporte.setStyleSheet("background-color: #28a745; color: white; padding: 10px;")
         
-        btn_limpiar = QPushButton("🧹 Limpieza Automática")
+        btn_limpiar = QPushButton("Limpieza Automática")
         btn_limpiar.clicked.connect(self.ejecutar_limpieza)
         btn_limpiar.setStyleSheet("background-color: #ffc107; color: black; padding: 10px;")
         
-        btn_exportar = QPushButton("📤 Exportar Datos")
+        btn_exportar = QPushButton("Exportar Datos")
         btn_exportar.clicked.connect(self.exportar_datos)
         btn_exportar.setStyleSheet("background-color: #17a2b8; color: white; padding: 10px;")
         

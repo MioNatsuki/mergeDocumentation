@@ -8,7 +8,7 @@ from core.models import Usuario
 def reset_complete_database():
     """Reinicia completamente la base de datos y crea datos iniciales"""
     
-    print("⚠️  ADVERTENCIA: Esto eliminará TODOS los datos existentes")
+    print("ADVERTENCIA: Esto eliminará TODOS los datos existentes")
     confirm = input("¿Estás seguro? (escribe 'SI' para continuar): ")
     
     if confirm != 'SI':
@@ -16,19 +16,19 @@ def reset_complete_database():
         return
     
     try:
-        print("🗑️  Eliminando todas las tablas...")
+        print("Eliminando todas las tablas...")
         Base.metadata.drop_all(bind=engine)
         
-        print("🔧 Creando todas las tablas nuevas...")
+        print("Creando todas las tablas nuevas...")
         Base.metadata.create_all(bind=engine)
         
-        print("👤 Creando usuario superadmin...")
+        print("Creando usuario superadmin...")
         crear_usuario_superadmin()
         
-        print("✅ Base de datos reiniciada exitosamente")
+        print("Base de datos reiniciada exitosamente")
         
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"Error: {e}")
 
 def crear_usuario_superadmin():
     """Crea el usuario superadmin por defecto"""
@@ -51,14 +51,14 @@ def crear_usuario_superadmin():
             
             db.add(superadmin)
             db.commit()
-            print("✅ Usuario superadmin creado:")
-            print("   Usuario: superadmin")
-            print("   Contraseña: admin123")
+            print("Usuario superadmin creado:")
+            print("Usuario: superadmin")
+            print("Contraseña: admin123")
         else:
-            print("✅ Usuario superadmin ya existe")
+            print("Usuario superadmin ya existe")
             
     except Exception as e:
-        print(f"❌ Error creando superadmin: {e}")
+        print(f"Error creando superadmin: {e}")
         db.rollback()
     finally:
         db.close()

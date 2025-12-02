@@ -89,7 +89,7 @@ class CSVUploader(QWidget):
         info_frame.setStyleSheet("background-color: #e7f3ff; padding: 10px; border-radius: 5px;")
         info_layout = QVBoxLayout()
         
-        lbl_info = QLabel("📋 Formato CSV requerido:")
+        lbl_info = QLabel("Formato CSV requerido:")
         lbl_info.setFont(QFont("Arial", 10, QFont.Weight.Bold))
         info_layout.addWidget(lbl_info)
         
@@ -173,7 +173,7 @@ class CSVUploader(QWidget):
         nombre_archivo = os.path.basename(file_path)
         tamano = os.path.getsize(file_path) / 1024  # KB
         
-        self.lbl_archivo.setText(f"📄 {nombre_archivo} ({tamano:.1f} KB)")
+        self.lbl_archivo.setText(f"{nombre_archivo} ({tamano:.1f} KB)")
         self.lbl_archivo.show()
         
         self.lbl_icono.setText("✅")

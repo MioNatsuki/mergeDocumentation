@@ -7,7 +7,7 @@ from core.models import ConfiguracionSistema, EmisionesAcumuladas, EmisionFinal
 
 def create_missing_tables():
     """Crea las tablas faltantes en la base de datos"""
-    print("🔧 Creando tablas faltantes...")
+    print("Creando tablas faltantes...")
     
     try:
         # Crear solo las tablas faltantes
@@ -15,13 +15,13 @@ def create_missing_tables():
         EmisionesAcumuladas.__table__.create(bind=engine, checkfirst=True)
         EmisionFinal.__table__.create(bind=engine, checkfirst=True)
         
-        print("✅ Tablas faltantes creadas exitosamente")
+        print("Tablas faltantes creadas exitosamente")
         
         # Insertar configuraciones por defecto
         insert_default_configurations()
         
     except Exception as e:
-        print(f"❌ Error creando tablas: {e}")
+        print(f"Error creando tablas: {e}")
 
 def insert_default_configurations():
     """Inserta configuraciones por defecto"""
@@ -93,10 +93,10 @@ def insert_default_configurations():
                 db.add(config)
         
         db.commit()
-        print("✅ Configuraciones por defecto insertadas")
+        print("Configuraciones por defecto insertadas")
         
     except Exception as e:
-        print(f"❌ Error insertando configuraciones: {e}")
+        print(f"Error insertando configuraciones: {e}")
         db.rollback()
     finally:
         db.close()

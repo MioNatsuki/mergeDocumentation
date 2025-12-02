@@ -7,10 +7,9 @@ import os
 
 class ProjectCard(QFrame):
     """Componente de tarjeta para proyectos - CON SIGNALS"""
-    # ¡ESTAS SEÑALES DEBEN ESTAR DEFINIDAS!
-    project_selected = pyqtSignal(int)      # ← DEBE EXISTIR
-    project_edit = pyqtSignal(int)          # ← DEBE EXISTIR  
-    project_delete = pyqtSignal(int)        # ← DEBE EXISTIR
+    project_selected = pyqtSignal(int)      
+    project_edit = pyqtSignal(int)          
+    project_delete = pyqtSignal(int)        
     
     def __init__(self, proyecto, usuario_rol, padron_nombre=None, parent=None):
         super().__init__(parent)
@@ -91,7 +90,7 @@ class ProjectCard(QFrame):
         info_layout.addWidget(name_label)
         
         # Padrón
-        padron_text = f"📊 {self.padron_nombre}" if self.padron_nombre else "📊 Sin padrón"
+        padron_text = f"{self.padron_nombre}" if self.padron_nombre else " Sin padrón"
         padron_label = QLabel(padron_text)
         padron_label.setFont(QFont("Jura", 9))
         padron_label.setStyleSheet("color: #5a6b70;")
@@ -99,7 +98,7 @@ class ProjectCard(QFrame):
         info_layout.addWidget(padron_label)
         
         # Fecha
-        fecha_text = f"📅 {self.proyecto.fecha_creacion.strftime('%d/%m/%Y')}"
+        fecha_text = f"{self.proyecto.fecha_creacion.strftime('%d/%m/%Y')}"
         fecha_label = QLabel(fecha_text)
         fecha_label.setFont(QFont("Jura", 8))
         fecha_label.setStyleSheet("color: #7a8b90;")

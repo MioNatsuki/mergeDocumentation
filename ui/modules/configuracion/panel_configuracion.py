@@ -35,26 +35,26 @@ class PanelConfiguracion(QWidget):
         
         # Tab: Base de Datos
         tab_db = self.crear_tab_base_datos()
-        self.tabs.addTab(tab_db, "🗃️ Base de Datos")
+        self.tabs.addTab(tab_db, "Base de Datos")
         
         # Tab: Rutas y Archivos
         tab_rutas = self.crear_tab_rutas()
-        self.tabs.addTab(tab_rutas, "📁 Rutas y Archivos")
+        self.tabs.addTab(tab_rutas, "Rutas y Archivos")
         
         # Tab: Seguridad
         tab_seguridad = self.crear_tab_seguridad()
-        self.tabs.addTab(tab_seguridad, "🔐 Seguridad")
+        self.tabs.addTab(tab_seguridad, "Seguridad")
         
         # Tab: Backup
         tab_backup = self.crear_tab_backup()
-        self.tabs.addTab(tab_backup, "💾 Backup")
+        self.tabs.addTab(tab_backup, "Backup")
         
         layout.addWidget(self.tabs)
         
         # Botones de acción
         button_layout = QHBoxLayout()
         
-        btn_guardar = QPushButton("💾 Guardar Configuración")
+        btn_guardar = QPushButton("Guardar Configuración")
         btn_guardar.clicked.connect(self.guardar_configuracion)
         btn_guardar.setStyleSheet("""
             QPushButton {
@@ -67,7 +67,7 @@ class PanelConfiguracion(QWidget):
             }
         """)
         
-        btn_restaurar = QPushButton("🔄 Restaurar Valores por Defecto")
+        btn_restaurar = QPushButton("Restaurar Valores por Defecto")
         btn_restaurar.clicked.connect(self.restaurar_valores_defecto)
         btn_restaurar.setStyleSheet("""
             QPushButton {
@@ -79,7 +79,7 @@ class PanelConfiguracion(QWidget):
             }
         """)
         
-        btn_test = QPushButton("🧪 Probar Configuración")
+        btn_test = QPushButton("Probar Configuración")
         btn_test.clicked.connect(self.probar_configuracion)
         btn_test.setStyleSheet("""
             QPushButton {
@@ -293,15 +293,15 @@ class PanelConfiguracion(QWidget):
         action_group = QGroupBox("Acciones Manuales")
         action_layout = QVBoxLayout()
         
-        btn_backup_now = QPushButton("🔄 Hacer Backup Ahora")
+        btn_backup_now = QPushButton("Hacer Backup Ahora")
         btn_backup_now.clicked.connect(self.hacer_backup_manual)
         btn_backup_now.setStyleSheet("background-color: #28a745; color: white; padding: 8px;")
         
-        btn_restore = QPushButton("📥 Restaurar Backup")
+        btn_restore = QPushButton("Restaurar Backup")
         btn_restore.clicked.connect(self.restaurar_backup)
         btn_restore.setStyleSheet("background-color: #17a2b8; color: white; padding: 8px;")
         
-        btn_clean_old = QPushButton("🧹 Limpiar Backups Antiguos")
+        btn_clean_old = QPushButton("Limpiar Backups Antiguos")
         btn_clean_old.clicked.connect(self.limpiar_backups_antiguos)
         btn_clean_old.setStyleSheet("background-color: #ffc107; color: black; padding: 8px;")
         

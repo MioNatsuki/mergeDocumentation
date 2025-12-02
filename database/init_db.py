@@ -13,7 +13,7 @@ def init_database():
     # Crear todas las tablas
     print("Creando tablas en la base de datos...")
     Base.metadata.create_all(bind=engine)
-    print("✅ Tablas creadas exitosamente")
+    print("Tablas creadas exitosamente")
     
     # Crear usuario superadmin por defecto
     from sqlalchemy.orm import sessionmaker
@@ -36,12 +36,12 @@ def init_database():
             
             db.add(superadmin)
             db.commit()
-            print("✅ Usuario superadmin creado:")
-            print("   Usuario: superadmin")
-            print("   Contraseña: admin123")
-            print("   ⚠️  Cambia la contraseña después del primer login!")
+            print("Usuario superadmin creado:")
+            print("Usuario: superadmin")
+            print("Contraseña: admin123")
+            print("Cambia la contraseña después del primer login!")
         else:
-            print("✅ Usuario superadmin ya existe")
+            print("Usuario superadmin ya existe")
         
         # Crear proyecto de ejemplo
         proyecto = db.query(Proyecto).filter(Proyecto.nombre == "Proyecto Demo").first()
@@ -54,10 +54,10 @@ def init_database():
             )
             db.add(proyecto)
             db.commit()
-            print("✅ Proyecto demo creado")
+            print("Proyecto demo creado")
             
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"Error: {e}")
         db.rollback()
     finally:
         db.close()

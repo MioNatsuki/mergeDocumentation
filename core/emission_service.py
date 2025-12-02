@@ -10,12 +10,7 @@ class EmissionService:
         self.db = db
     
     def mover_a_emisiones_final(self, sesion_id: str, usuario_id: int) -> Tuple[bool, int, List[str]]:
-        """
-        Mueve registros de temporal a final después de generación exitosa
-        
-        Returns:
-            Tuple[bool, int, List[str]]: (éxito, registros_movidos, errores)
-        """
+        """Mueve registros de temporal a final después de generación exitosa"""
         try:
             # Obtener registros temporales exitosos
             registros_temp = self.db.query(EmisionTemp).filter(
@@ -61,16 +56,7 @@ class EmissionService:
             return False, 0, [f"Error general moviendo a final: {str(e)}"]
     
     def acumular_emisiones(self, proyecto_id: int, dias_retroceso: int = 30) -> Tuple[bool, int, List[str]]:
-        """
-        Mueve emisiones finales a la tabla de acumulados para limpieza
-        
-        Args:
-            proyecto_id: ID del proyecto
-            dias_retroceso: Días hacia atrás para acumular
-            
-        Returns:
-            Tuple[bool, int, List[str]]: (éxito, registros_acumulados, errores)
-        """
+        """Mueve emisiones finales a la tabla de acumulados para limpieza"""
         try:
             fecha_limite = datetime.now() - timedelta(days=dias_retroceso)
             
@@ -105,7 +91,7 @@ class EmissionService:
                     
                     self.db.add(acumulado)
                     
-                    # Eliminar de final (opcional, podríamos hacer soft delete)
+                    # Eliminar de final (Quizá podría ser soft delete)
                     self.db.delete(emision_final)
                     
                     registros_acumulados += 1
@@ -125,16 +111,7 @@ class EmissionService:
             return False, 0, [f"Error general en acumulación: {str(e)}"]
     
     def limpiar_temporales(self, sesion_id: str = None, horas_antiguedad: int = 24) -> Tuple[bool, int, List[str]]:
-        """
-        Limpia registros temporales antiguos
-        
-        Args:
-            sesion_id: Sesión específica a limpiar (opcional)
-            horas_antiguedad: Horas de antigüedad para limpiar
-            
-        Returns:
-            Tuple[bool, int, List[str]]: (éxito, registros_eliminados, errores)
-        """
+        """Limpia registros temporales antiguos"""
         try:
             fecha_limite = datetime.now() - timedelta(hours=horas_antiguedad)
             
@@ -228,15 +205,10 @@ class EmissionService:
         
         return stats
     
-    def generar_reporte_auditoria(self, proyecto_id: int, fecha_inicio: datetime, fecha_fin: datetime) -> List[Dict]:
+    def generar_reporte_auditoria(self, proyecto_id: int, fecha_inicio: datetime, fecha_fin: datetime) -> List[Dict]: #DEJARLO PARA EL FINAL PARA HACERLO CON DATOS REALES
         """Genera reporte de auditoría para un proyecto"""
         try:
-            # En una implementación real, esto usaría una consulta más compleja
-            # uniendo bitacora con emisiones y usuarios
             reporte = []
-            
-            # Simular datos de reporte
-            # En producción, esto sería una consulta SQL real
             reporte.append({
                 'fecha': datetime.now().strftime('%d/%m/%Y %H:%M'),
                 'usuario': 'Sistema',

@@ -28,18 +28,7 @@ class PDFService:
     
     def generar_pdf(self, datos: Dict, plantilla_config: Dict, 
                    ruta_salida: str, nombre_archivo: str) -> Tuple[bool, str]:
-        """
-        Genera un PDF real con los datos proporcionados
-        
-        Args:
-            datos: Diccionario con los datos dinámicos
-            plantilla_config: Configuración de la plantilla con campos y posiciones
-            ruta_salida: Carpeta donde guardar el PDF
-            nombre_archivo: Nombre del archivo de salida
-        
-        Returns:
-            Tuple[bool, str]: (éxito, mensaje_error_o_ruta)
-        """
+        """ Genera un PDF real con los datos proporcionados """
         try:
             # Crear directorio si no existe
             os.makedirs(ruta_salida, exist_ok=True)
@@ -221,12 +210,7 @@ class PDFService:
     
     def generar_lote_pdfs(self, registros: List[Dict], plantilla_config: Dict, 
                          ruta_salida: str, callback_progreso=None) -> Dict:
-        """
-        Genera un lote de PDFs
-        
-        Returns:
-            Dict con estadísticas del proceso
-        """
+        """Genera un lote de PDFs"""
         resultados = {
             'total': len(registros),
             'exitosos': 0,

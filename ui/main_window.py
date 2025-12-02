@@ -10,6 +10,7 @@ from ui.modules.proyectos.dashboard_proyectos import DashboardProyectos
 from ui.modules.plantillas.dashboard_plantillas import DashboardPlantillas
 from ui.modules.estadisticas.dashboard_estadisticas import DashboardEstadisticas
 from ui.modules.configuracion.panel_configuracion import PanelConfiguracion
+from ui.modules.plantillas.dashboard_mejorado import DashboardPlantillasMejorado
 
 class MainWindow(QMainWindow):
     def __init__(self, usuario: Usuario):
@@ -26,12 +27,6 @@ class MainWindow(QMainWindow):
         
         layout = QVBoxLayout()
         central_widget.setLayout(layout)
-        
-        # Header
-        header = QLabel(f"Bienvenido, {self.usuario.nombre} - Rol: {self.usuario.rol.capitalize()}")
-        header.setFont(QFont("Arial", 14, QFont.Weight.Bold))
-        header.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(header)
         
         # Stacked widget para módulos
         self.stacked_widget = QStackedWidget()
@@ -57,21 +52,21 @@ class MainWindow(QMainWindow):
         if self.usuario.rol == "superadmin":
             menu_config = menubar.addMenu("&Configuración")
             
-            action_estadisticas = QAction("📊 Estadísticas y Reportes", self)
+            action_estadisticas = QAction("Estadísticas y Reportes", self)
             action_estadisticas.triggered.connect(self.mostrar_estadisticas)
             menu_config.addAction(action_estadisticas)
             
-            action_config_sistema = QAction("⚙️ Configuración del Sistema", self)
+            action_config_sistema = QAction("Configuración del Sistema", self)
             action_config_sistema.triggered.connect(self.mostrar_configuracion)
             menu_config.addAction(action_config_sistema)
             
             menu_config.addSeparator()
             
-            action_usuarios = QAction("👥 Gestión de Usuarios", self)
+            action_usuarios = QAction("Gestión de Usuarios", self)
             action_usuarios.triggered.connect(self.show_gestion_usuarios)
             menu_config.addAction(action_usuarios)
             
-            action_auditoria = QAction("📋 Auditoría", self)
+            action_auditoria = QAction("Auditoría", self)
             action_auditoria.triggered.connect(self.show_auditoria)
             menu_config.addAction(action_auditoria)
         
@@ -132,14 +127,28 @@ class MainWindow(QMainWindow):
         """Cuando se selecciona un proyecto desde el dashboard"""
         print(f"DEBUG: Navegando al proyecto {proyecto_id}")
         
-        # Crear dashboard de plantillas para el proyecto seleccionado
-        dashboard_plantillas = DashboardPlantillas(self.usuario, proyecto_id, self.stacked_widget)
-        dashboard_plantillas.volver_a_proyectos.connect(self.mostrar_dashboard_proyectos)
+        # Usar el nuevo dashboard
+        dashboard_plantillas = DashboardPlantillasMejorado(self.usuario, proyecto_id, self.stacked_widget)
+        dashboard_plantillas.plantilla_seleccionada.connect(self.on_plantilla_seleccionada)
+        dashboard_plantillas.volver_a_proyectos.connect(self.mostrar_dashboard_proyectos) 
         
         # Agregar al stacked widget y mostrar
         self.stacked_widget.addWidget(dashboard_plantillas)
         self.stacked_widget.setCurrentWidget(dashboard_plantillas)
-        print(f"DEBUG: Dashboard de plantillas creado y mostrado")
+
+    def on_plantilla_seleccionada(self, plantilla_id, accion):
+        """Cuando se selecciona una plantilla"""
+        print(f"DEBUG: Plantilla {plantilla_id} - Acción: {accion}")
+        
+        if accion == "editar":
+            # Abrir editor avanzado (próxima semana)
+            QMessageBox.information(self, "Próximamente", "Editor avanzado en desarrollo")
+        elif accion == "usar":
+            # Navegar a procesamiento CSV
+            from ui.modules.procesamiento.cargador_csv import CargadorCSV
+            cargador = CargadorCSV(self.usuario, self.proyecto_actual, plantilla_id)
+            self.stacked_widget.addWidget(cargador)
+            self.stacked_widget.setCurrentWidget(cargador)
 
     def mostrar_estadisticas(self):
         """Muestra el dashboard de estadísticas"""

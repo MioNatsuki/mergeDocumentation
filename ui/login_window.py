@@ -6,7 +6,7 @@ from config.database import SessionLocal
 from core.auth import AuthService
 
 class LoginWindow(QWidget):
-    login_successful = pyqtSignal(object)  # Emite el usuario autenticado
+    login_successful = pyqtSignal(object)
     
     def __init__(self):
         super().__init__()

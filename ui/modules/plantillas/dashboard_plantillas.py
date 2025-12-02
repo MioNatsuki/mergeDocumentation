@@ -13,7 +13,7 @@ from ui.modules.generador_pdf.emisor_documentos import EmisorDocumentos
 
 class DashboardPlantillas(QWidget):
     """Dashboard de plantillas para un proyecto específico"""
-    volver_a_proyectos = pyqtSignal()
+    volver_proyectos = pyqtSignal()
     
     def __init__(self, usuario, proyecto_id, stacked_widget=None):
         super().__init__()
@@ -34,7 +34,7 @@ class DashboardPlantillas(QWidget):
         header_layout = QHBoxLayout()
         
         btn_volver = QPushButton("← Volver a Proyectos")
-        btn_volver.clicked.connect(self.volver_a_proyectos.emit)
+        btn_volver.clicked.connect(self.volver_proyectos.emit)
         btn_volver.setStyleSheet("""
             QPushButton {
                 background-color: #6c757d;

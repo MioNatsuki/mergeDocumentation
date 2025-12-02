@@ -19,7 +19,7 @@ class Usuario(Base):
     ultimo_login = Column(DateTime(timezone=True))
     proyecto_permitido = Column(String(200))
     
-    # Relaciones - simplificadas para evitar problemas
+    # Relaciones
     bitacoras = relationship("Bitacora", back_populates="usuario")
 
     def set_password(self, password):
@@ -51,16 +51,15 @@ class Proyecto(Base):
     is_deleted = Column(Boolean, default=False)
     logo = Column(String(500))
     
-    # Relaciones simplificadas - comentar las problemáticas temporalmente
+    # Relaciones simplificadas
     plantillas = relationship("Plantilla", back_populates="proyecto")
 
 class IdentificadorPadrones(Base):
     __tablename__ = "identificador_padrones"
     __table_args__ = {'extend_existing': True}
     
-    id = Column(Integer, primary_key=True, index=True)
-    nombre_tabla = Column(String(100), unique=True, nullable=False)  # Nombre humano
-    uuid_padron = Column(String(100), unique=True, nullable=False)  # UUID único
+    uuid_padron = Column(String(100), primary_key=True, index=True)
+    nombre_tabla = Column(String(100), unique=True, nullable=False)
     activo = Column(Boolean, default=True)
     descripcion = Column(Text)
 
@@ -78,6 +77,7 @@ class Plantilla(Base):
     activa = Column(Boolean, default=True)
     fecha_creacion = Column(DateTime(timezone=True), server_default=func.now())
     usuario_creador = Column(Integer, ForeignKey("usuarios.id"))
+    is_deleted = Column(Boolean, default=False)
     
     # Relación básica
     proyecto = relationship("Proyecto", back_populates="plantillas")
@@ -112,11 +112,6 @@ class EmisionTemp(Base):
     error_mensaje = Column(Text)
     fecha_carga = Column(DateTime(timezone=True), server_default=func.now())
     sesion_id = Column(String(100))
-    
-    # Relaciones básicas sin back_populates problemático
-    # proyecto = relationship("Proyecto")
-    # plantilla = relationship("Plantilla")
-    # usuario = relationship("Usuario")
 
 class EmisionFinal(Base):
     __tablename__ = "emisiones_final"
@@ -132,11 +127,6 @@ class EmisionFinal(Base):
     fecha_generacion = Column(DateTime(timezone=True))
     estado_generacion = Column(String(20))
     fecha_creacion = Column(DateTime(timezone=True), server_default=func.now())
-    
-    # Relaciones básicas
-    # proyecto = relationship("Proyecto")
-    # plantilla = relationship("Plantilla")
-    # usuario = relationship("Usuario")
 
 class EmisionesAcumuladas(Base):
     __tablename__ = "emisiones_acumuladas"
@@ -154,11 +144,6 @@ class EmisionesAcumuladas(Base):
     ruta_archivo = Column(String(500))
     fecha_emision = Column(DateTime(timezone=True))
     fecha_registro = Column(DateTime(timezone=True), server_default=func.now())
-    
-    # Relaciones básicas
-    # proyecto = relationship("Proyecto")
-    # plantilla = relationship("Plantilla")
-    # usuario = relationship("Usuario")
 
 class ConfiguracionSistema(Base):
     __tablename__ = "configuracion_sistema"

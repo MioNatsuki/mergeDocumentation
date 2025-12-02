@@ -59,11 +59,10 @@ class IdentificadorPadrones(Base):
     __table_args__ = {'extend_existing': True}
     
     id = Column(Integer, primary_key=True, index=True)
-    nombre = Column(String(100), unique=True, nullable=False)  # Nombre humano
+    nombre_tabla = Column(String(100), unique=True, nullable=False)  # Nombre humano
     uuid_padron = Column(String(100), unique=True, nullable=False)  # UUID único
-    descripcion = Column(Text)
     activo = Column(Boolean, default=True)
-    fecha_creacion = Column(DateTime(timezone=True), server_default=func.now())
+    descripcion = Column(Text)
 
 class Plantilla(Base):
     __tablename__ = "plantillas"

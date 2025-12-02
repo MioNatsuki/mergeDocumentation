@@ -9,25 +9,21 @@ class PadronService:
         self.db = db
     
     def obtener_padrones_activos(self) -> List[Dict]:
-        """
-        Obtiene padrones con sus UUIDs para el dropdown
-        SELECT id, nombre, uuid_padron, descripcion FROM identificador_padrones
-        """
+        """Obtiene padrones activos"""
         try:
             padrones = self.db.query(IdentificadorPadrones).filter(
                 IdentificadorPadrones.activo == True
-            ).order_by(IdentificadorPadrones.nombre).all()
+            ).order_by(IdentificadorPadrones.nombre_tabla).all()  # ← CORREGIDO
             
             return [
                 {
                     "id": padron.id,
-                    "nombre": padron.nombre,
-                    "uuid_padron": padron.uuid_padron,  # ← EL UUID
+                    "nombre_tabla": padron.nombre_tabla,  # ← CORREGIDO
+                    "uuid_padron": padron.uuid_padron,
                     "descripcion": padron.descripcion
                 }
                 for padron in padrones
             ]
-            
         except Exception as e:
             print(f"Error obteniendo padrones: {e}")
             return []

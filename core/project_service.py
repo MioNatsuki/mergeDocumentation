@@ -38,7 +38,7 @@ class ProjectService:
             return []
     
     def crear_proyecto(self, nombre: str, descripcion: str, tabla_padron: str, 
-                   usuario: Usuario, logo_path: str = None, uuid_padron: str = None) -> Proyecto:
+                   usuario: Usuario, logo: str = None, uuid_padron: str = None) -> Proyecto:
         """Crea un nuevo proyecto con logo"""
         if usuario.rol not in ["superadmin", "admin"]:
             raise PermissionError("No tiene permisos para crear proyectos")
@@ -47,10 +47,9 @@ class ProjectService:
             proyecto = Proyecto(
                 nombre=nombre,
                 descripcion=descripcion,
-                tabla_padron=tabla_padron,
-                logo_path=logo_path,
-                uuid_padron=uuid_padron,
-                config_json={"uuid_padron": uuid_padron}
+                tabla_padron=tabla_padron,  # ← ESTO ES EL UUID DEL PADRÓN
+                logo=logo,  # ← Nombre de campo es 'logo', no 'logo_path'
+                config_json={}
             )
             
             self.db.add(proyecto)
@@ -73,8 +72,11 @@ class ProjectService:
             if not proyecto:
                 raise ValueError("Proyecto no encontrado")
             
+            # Filtrar solo los campos que existen en el modelo
+            campos_validos = ['nombre', 'descripcion', 'tabla_padron', 'logo', 'activo']
+            
             for key, value in datos_actualizacion.items():
-                if hasattr(proyecto, key):
+                if key in campos_validos and hasattr(proyecto, key):
                     setattr(proyecto, key, value)
             
             self.db.commit()

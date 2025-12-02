@@ -108,7 +108,7 @@ class LogoPreview(QFrame):
     def __init__(self):
         super().__init__()
         self.setup_ui()
-        self.logo_path = None
+        self.logo = None
     
     def setup_ui(self):
         self.setFixedSize(180, 100)
@@ -151,12 +151,12 @@ class LogoPreview(QFrame):
         layout.addWidget(self.lbl_tamano)
         self.setLayout(layout)
     
-    def cargar_logo(self, logo_path):
+    def cargar_logo(self, logo):
         """Carga un logo en el preview"""
-        self.logo_path = logo_path
-        if logo_path and os.path.exists(logo_path):
+        self.logo = logo
+        if logo and os.path.exists(logo):
             try:
-                pixmap = QPixmap(logo_path)
+                pixmap = QPixmap(logo)
                 if not pixmap.isNull():
                     # Escalar manteniendo aspect ratio
                     pixmap = pixmap.scaled(150, 70, 
@@ -165,7 +165,7 @@ class LogoPreview(QFrame):
                     self.lbl_preview.setPixmap(pixmap)
                     
                     # Mostrar tamaño
-                    tamano = os.path.getsize(logo_path) / 1024  # KB
+                    tamano = os.path.getsize(logo) / 1024  # KB
                     self.lbl_tamano.setText(f"{tamano:.1f} KB")
                 else:
                     self.lbl_preview.setText("❌ Error")
@@ -509,35 +509,45 @@ class FormularioProyecto(QWidget):
         self.setLayout(main_layout)
     
     def cargar_padrones(self):
-        """Carga los padrones - dropdown muestra nombre pero guarda UUID"""
+        """Carga los padrones para el dropdown - VERSIÓN CORREGIDA"""
         db = SessionLocal()
         try:
             padron_service = PadronService(db)
             padrones = padron_service.obtener_padrones_activos()
             
+            print(f"DEBUG - Padrones obtenidos: {padrones}")  # Para debugging
+            
             self.combo_padron.clear()
             self.combo_padron.addItem("-- Seleccione un padrón --", None)
             
             for padron in padrones:
-                # Mostrar nombre al usuario
-                display_text = padron['nombre']
-                if padron['descripcion']:
-                    desc_corta = padron['descripcion'][:40] + '...' if len(padron['descripcion']) > 40 else padron['descripcion']
+                # USAR 'nombre_tabla' NO 'nombre'
+                nombre_tabla = padron.get('nombre_tabla', 'Sin nombre')
+                uuid_padron = padron.get('uuid_padron', '')
+                descripcion = padron.get('descripcion', '')
+                
+                # Texto para mostrar
+                display_text = nombre_tabla
+                if descripcion:
+                    desc_corta = descripcion[:40] + '...' if len(descripcion) > 40 else descripcion
                     display_text += f" - {desc_corta}"
                 
-                # Guardar UUID como dato (para tabla_padron)
-                self.combo_padron.addItem(display_text, padron['uuid_padron'])
+                # Datos para guardar (UUID)
+                self.combo_padron.addItem(display_text, uuid_padron)
             
-            # Si estamos editando, seleccionar el padrón actual por UUID
+            # Si estamos editando, seleccionar el padrón actual
             if self.proyecto and self.proyecto.tabla_padron:
                 for i in range(self.combo_padron.count()):
                     if self.combo_padron.itemData(i) == self.proyecto.tabla_padron:
                         self.combo_padron.setCurrentIndex(i)
                         break
+            
+            print(f"DEBUG - Combo cargado con {self.combo_padron.count()} items")
                         
         except Exception as e:
             print(f"Error cargando padrones: {e}")
-            QMessageBox.warning(self, "Error", f"No se pudieron cargar los padrones: {e}")
+            import traceback
+            traceback.print_exc()
         finally:
             db.close()
     
@@ -553,7 +563,7 @@ class FormularioProyecto(QWidget):
         if archivo:
             self.procesar_logo(archivo)
     
-    def procesar_logo(self, logo_path):
+    def procesar_logo(self, logo):
         """Procesa el logo seleccionado"""
         # Mostrar progreso
         self.progress_logo.setVisible(True)
@@ -561,7 +571,7 @@ class FormularioProyecto(QWidget):
         self.btn_seleccionar_logo.setEnabled(False)
         
         # Crear y ejecutar hilo de upload
-        self.thread_upload = LogoUploadThread(logo_path, self.proyecto_id)
+        self.thread_upload = LogoUploadThread(logo, self.proyecto_id)
         self.thread_upload.upload_complete.connect(self.on_logo_upload_complete)
         self.thread_upload.upload_error.connect(self.on_logo_upload_error)
         self.thread_upload.progress.connect(self.progress_logo.setValue)
@@ -623,12 +633,12 @@ class FormularioProyecto(QWidget):
                 self.txt_descripcion.setText(self.proyecto.descripcion or "")
                 
                 # Cargar logo si existe
-                if self.proyecto.logo_path and os.path.exists(self.proyecto.logo_path):
-                    self.logo_final_path = self.proyecto.logo_path
-                    self.logo_preview.cargar_logo(self.proyecto.logo_path)
+                if self.proyecto.logo and os.path.exists(self.proyecto.logo):
+                    self.logo_final_path = self.proyecto.logo
+                    self.logo_preview.cargar_logo(self.proyecto.logo)
                     self.btn_eliminar_logo.setEnabled(True)
                     
-                    nombre_archivo = os.path.basename(self.proyecto.logo_path)
+                    nombre_archivo = os.path.basename(self.proyecto.logo)
                     self.lbl_info_logo.setText(f"✓ Logo actual: {nombre_archivo}")
                     self.lbl_info_logo.setStyleSheet("color: #99b898; font-weight: bold;")
                 
@@ -707,7 +717,7 @@ class FormularioProyecto(QWidget):
             if self.proyecto_id:
                 # Edición
                 project_service.actualizar_proyecto(self.proyecto_id, datos, self.usuario)
-                mensaje = f"✅ Proyecto actualizado\nPadrón: {padron.nombre}"
+                mensaje = f"✅ Proyecto actualizado\nPadrón: {padron.nombre_tabla if padron else 'Desconocido'}"
             else:
                 # Creación
                 project_service.crear_proyecto(
@@ -717,7 +727,7 @@ class FormularioProyecto(QWidget):
                     self.usuario,
                     datos['logo']
                 )
-                mensaje = f"✅ Proyecto creado\nPadrón: {padron.nombre}"
+                mensaje = f"✅ Proyecto creado\nPadrón: {padron.nombre_tabla if padron else 'Desconocido'}"
             
             db.commit()
             

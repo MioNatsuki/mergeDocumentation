@@ -318,6 +318,7 @@ class PreviewPDF(QFrame):
     
     def procesar_click(self, pos_global):
         """Procesa un click para agregar campo"""
+        print(f"DEBUG: procesar_click llamado con pos: {pos_global}")
         # Convertir posición global a posición en el label
         pos_label = self.lbl_imagen.mapFromGlobal(pos_global)
         
@@ -334,6 +335,7 @@ class PreviewPDF(QFrame):
                   f"({x_mm:.1f}, {y_mm:.1f}) mm")
             
             # Emitir señal con posición en mm
+            print(f"DEBUG: Emitiendo click_posicion({x_mm}, {y_mm})")
             self.click_posicion.emit(int(x_mm), int(y_mm))
             
             # También verificar si se hizo clic en un campo existente

@@ -514,26 +514,35 @@ class DashboardPlantillasMejorado(QWidget):
                     QMessageBox.warning(self, "Error", "El archivo PDF no existe")
                     return
                 
-                # Abrir editor visual
+                # IMPORTANTE: Importar desde el módulo correcto
                 from ui.modules.plantillas.editor_mejorado.editor_visual import EditorVisual
                 
-                editor = EditorVisual(self.usuario, self.proyecto_id, pdf_path)
+                # Crear el editor con el PDF
+                editor = EditorVisual(self.usuario, self.proyecto_id, pdf_path, self.stacked_widget)
                 editor.plantilla_guardada.connect(self.on_plantilla_guardada)
                 
+                # Agregar al stacked widget
                 self.stacked_widget.addWidget(editor)
                 self.stacked_widget.setCurrentWidget(editor)
                 
-                print(f"DEBUG: Editor abierto con PDF: {pdf_path}")
+                print(f"✅ Editor abierto con PDF: {pdf_path}")
                 
             except ImportError as e:
-                QMessageBox.critical(self, "Error de importación", 
-                                f"No se pudo cargar el editor visual: {str(e)}\n\n"
-                                f"Asegúrate de que los archivos del editor existan en:\n"
-                                f"ui/modules/plantillas/editor_mejorado/")
+                print(f"❌ Error de importación: {e}")
+                QMessageBox.critical(
+                    self, 
+                    "Error de importación", 
+                    f"No se pudo cargar el editor visual:\n\n{str(e)}\n\n"
+                    f"Asegúrate de que:\n"
+                    f"1. PyQt6 esté instalado: pip install PyQt6\n"
+                    f"2. PyMuPDF esté instalado: pip install PyMuPDF\n"
+                    f"3. Pillow esté instalado: pip install Pillow"
+                )
             except Exception as e:
-                QMessageBox.critical(self, "Error", f"No se pudo abrir el editor: {str(e)}")
+                print(f"❌ Error: {e}")
                 import traceback
                 traceback.print_exc()
+                QMessageBox.critical(self, "Error", f"No se pudo abrir el editor:\n{str(e)}")
     
     def on_plantilla_guardada(self, configuracion):
         """Cuando se guarda una plantilla desde el editor"""

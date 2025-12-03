@@ -1,462 +1,775 @@
-# ui/modules/plantillas/editor_mejorado/editor_visual.py - VERSIÓN COMPLETA FUNCIONAL
+# ui/modules/plantillas/editor_mejorado/editor_visual.py (VERSIÓN CORREGIDA)
 from PyQt6.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QLabel, 
                              QPushButton, QMessageBox, QSplitter, QFrame,
-                             QInputDialog, QScrollArea)
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QFont, QColor
+                             QInputDialog, QScrollArea, QFileDialog, QMenu,
+                             QTextEdit, QLineEdit, QComboBox, QSpinBox, 
+                             QCheckBox, QFontDialog, QColorDialog, QGroupBox,
+                             QListWidget, QListWidgetItem, QToolBar, QToolButton)
+from PyQt6.QtCore import Qt, pyqtSignal, QRect, QPoint
+from PyQt6.QtGui import QFont, QColor, QPixmap, QImage, QPainter, QPen, QBrush, QAction
 import json
 import os
 import traceback
+from typing import Dict, List, Optional
+import fitz
 
-from .preview_pdf import PreviewPDF
-from .campo_widget import CampoWidget
-from .panel_campos import PanelCampos
-from .panel_propiedades import PanelPropiedades
+# Importar con try/except para mejor manejo de errores
+try:
+    import fitz  # PyMuPDF
+    PDF_SUPPORT = True
+except ImportError:
+    PDF_SUPPORT = False
+    print("Advertencia: PyMuPDF (fitz) no está instalado. Usando placeholder.")
 
+try:
+    from PIL import Image
+    IMAGE_SUPPORT = True
+except ImportError:
+    IMAGE_SUPPORT = False
+    print("Advertencia: Pillow no está instalado.")
+
+# ================== CLASE CAMPO DE TEXTO ==================
+class CampoTextoWidget(QFrame):
+    """Widget de campo de texto arrastrable y redimensionable"""
+    
+    campo_modificado = pyqtSignal(dict)
+    campo_seleccionado = pyqtSignal(object)
+    solicita_eliminar = pyqtSignal(object)
+    
+    def __init__(self, nombre: str = "Nuevo Campo", tipo: str = "texto", parent=None):
+        super().__init__(parent)
+        self.nombre = nombre
+        self.tipo = tipo
+        self.config = {
+            "nombre": nombre,
+            "tipo": tipo,
+            "texto": nombre,
+            "fuente": "Arial",
+            "tamano": 12,
+            "color": "#000000",
+            "negrita": False,
+            "cursiva": False,
+            "alineacion": "izquierda",
+            "formato": "texto",
+            "columna_padron": "",
+            "x": 50,
+            "y": 50,
+            "ancho": 100,
+            "alto": 30,
+            "margen": 2,
+            "fondo": "transparente",
+            "borde": True
+        }
+        
+        self.seleccionado = False
+        self.drag_pos = None
+        self.redimensionando = False
+        self.resize_corner = None
+        
+        self.setup_ui()
+        self.actualizar_estilo()
+        
+    def setup_ui(self):
+        """Configura la interfaz del campo"""
+        self.setFrameStyle(QFrame.Shape.Box)
+        self.setCursor(Qt.CursorShape.SizeAllCursor)
+        
+        layout = QVBoxLayout()
+        layout.setContentsMargins(2, 2, 2, 2)
+        
+        self.label = QLabel(self.config["texto"])
+        self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.label)
+        
+        self.setLayout(layout)
+        self.setFixedSize(self.config["ancho"], self.config["alto"])
+        
+    def mousePressEvent(self, event):
+        """Maneja clic en el campo"""
+        if event.button() == Qt.MouseButton.LeftButton:
+            # Verificar si es clic en esquina para redimensionar
+            rect = self.rect()
+            corner_size = 10
+            corners = {
+                "top-left": QRect(0, 0, corner_size, corner_size),
+                "top-right": QRect(rect.width() - corner_size, 0, corner_size, corner_size),
+                "bottom-left": QRect(0, rect.height() - corner_size, corner_size, corner_size),
+                "bottom-right": QRect(rect.width() - corner_size, rect.height() - corner_size, corner_size, corner_size)
+            }
+            
+            for corner_name, corner_rect in corners.items():
+                if corner_rect.contains(event.pos()):
+                    self.redimensionando = True
+                    self.resize_corner = corner_name
+                    self.resize_start_pos = event.globalPosition().toPoint()
+                    self.resize_start_size = self.size()
+                    return
+            
+            # Si no es redimensionar, es arrastre
+            self.drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            self.campo_seleccionado.emit(self)
+            event.accept()
+            
+    def mouseMoveEvent(self, event):
+        """Maneja movimiento del mouse"""
+        if event.buttons() & Qt.MouseButton.LeftButton:
+            if self.redimensionando:
+                # Redimensionar
+                delta = event.globalPosition().toPoint() - self.resize_start_pos
+                
+                new_width = self.resize_start_size.width()
+                new_height = self.resize_start_size.height()
+                
+                if self.resize_corner in ["top-right", "bottom-right"]:
+                    new_width = max(50, self.resize_start_size.width() + delta.x())
+                elif self.resize_corner in ["top-left", "bottom-left"]:
+                    new_width = max(50, self.resize_start_size.width() - delta.x())
+                    if new_width > 50:
+                        self.move(self.x() + delta.x(), self.y())
+                
+                if self.resize_corner in ["bottom-left", "bottom-right"]:
+                    new_height = max(30, self.resize_start_size.height() + delta.y())
+                elif self.resize_corner in ["top-left", "top-right"]:
+                    new_height = max(30, self.resize_start_size.height() - delta.y())
+                    if new_height > 30:
+                        self.move(self.x(), self.y() + delta.y())
+                
+                self.setFixedSize(new_width, new_height)
+                self.config["ancho"] = new_width
+                self.config["alto"] = new_height
+                self.campo_modificado.emit({"ancho": new_width, "alto": new_height})
+                
+            elif self.drag_pos:
+                # Arrastrar
+                new_pos = event.globalPosition().toPoint() - self.drag_pos
+                self.move(new_pos)
+                
+                # Actualizar posición en mm (asumiendo escala)
+                if hasattr(self.parent(), 'escala'):
+                    escala = self.parent().escala
+                    self.config["x"] = self.x() / escala
+                    self.config["y"] = self.y() / escala
+                    self.campo_modificado.emit({"x": self.config["x"], "y": self.config["y"]})
+    
+    def mouseReleaseEvent(self, event):
+        """Maneja liberación del mouse"""
+        self.redimensionando = False
+        self.drag_pos = None
+        self.resize_corner = None
+    
+    def mouseDoubleClickEvent(self, event):
+        """Doble clic para editar texto"""
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.editar_texto()
+    
+    def contextMenuEvent(self, event):
+        """Menú contextual con opciones"""
+        menu = QMenu(self)
+        
+        action_editar = QAction("✏️ Editar texto", self)
+        action_editar.triggered.connect(self.editar_texto)
+        
+        action_fuente = QAction("🔤 Cambiar fuente", self)
+        action_fuente.triggered.connect(self.cambiar_fuente)
+        
+        action_color = QAction("🎨 Cambiar color", self)
+        action_color.triggered.connect(self.cambiar_color)
+        
+        action_eliminar = QAction("🗑️ Eliminar", self)
+        action_eliminar.triggered.connect(lambda: self.solicita_eliminar.emit(self))
+        
+        menu.addAction(action_editar)
+        menu.addAction(action_fuente)
+        menu.addAction(action_color)
+        menu.addSeparator()
+        menu.addAction(action_eliminar)
+        
+        menu.exec(event.globalPosition().toPoint())
+    
+    def editar_texto(self):
+        """Diálogo para editar texto"""
+        texto, ok = QInputDialog.getText(
+            self, "Editar texto",
+            "Texto del campo:",
+            text=self.config["texto"]
+        )
+        
+        if ok and texto:
+            self.config["texto"] = texto
+            self.label.setText(texto)
+            self.campo_modificado.emit({"texto": texto})
+    
+    def cambiar_fuente(self):
+        """Diálogo para cambiar fuente"""
+        font, ok = QFontDialog.getFont()
+        if ok:
+            self.config["fuente"] = font.family()
+            self.config["tamano"] = font.pointSize()
+            self.config["negrita"] = font.bold()
+            self.config["cursiva"] = font.italic()
+            
+            self.label.setFont(font)
+            self.campo_modificado.emit({
+                "fuente": font.family(),
+                "tamano": font.pointSize(),
+                "negrita": font.bold(),
+                "cursiva": font.italic()
+            })
+    
+    def cambiar_color(self):
+        """Diálogo para cambiar color"""
+        color = QColorDialog.getColor(QColor(self.config["color"]), self, "Seleccionar color")
+        if color.isValid():
+            self.config["color"] = color.name()
+            self.actualizar_estilo()
+            self.campo_modificado.emit({"color": color.name()})
+    
+    def actualizar_estilo(self):
+        """Actualiza el estilo visual del campo"""
+        estilo = f"""
+            CampoTextoWidget {{
+                background-color: {'rgba(173, 216, 230, 0.7)' if self.seleccionado else 'rgba(255, 255, 255, 0.3)'};
+                border: { '2px solid #ff0000' if self.seleccionado else '1px solid #000000'};
+                border-radius: 3px;
+                padding: 2px;
+            }}
+            QLabel {{
+                color: {self.config['color']};
+                font-family: '{self.config['fuente']}';
+                font-size: {self.config['tamano']}pt;
+                font-weight: {'bold' if self.config['negrita'] else 'normal'};
+                font-style: {'italic' if self.config['cursiva'] else 'normal'};
+            }}
+        """
+        self.setStyleSheet(estilo)
+    
+    def set_seleccionado(self, seleccionado: bool):
+        """Marca/desmarca el campo como seleccionado"""
+        self.seleccionado = seleccionado
+        self.actualizar_estilo()
+
+# ================== CLASE PREVIEW PDF ==================
+class PreviewPDF(QFrame):
+    """Área para previsualizar PDF con campos"""
+    
+    click_posicion = pyqtSignal(float, float)  # x, y en mm
+    campo_agregado = pyqtSignal(dict)  # Configuración del campo
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.pdf_path = None
+        self.campos = []  # Lista de campos en el PDF
+        self.campo_seleccionado = None
+        self.imagen_pdf = None
+        self.escala = 2.0  # px por mm
+        self.modo_actual = "seleccion"  # seleccion, agregar_texto
+        
+        self.setup_ui()
+        
+    def setup_ui(self):
+        """Configura la interfaz"""
+        self.setFrameStyle(QFrame.Shape.StyledPanel)
+        self.setStyleSheet("""
+            PreviewPDF {
+                background-color: #f0f0f0;
+                border: 1px solid #ccc;
+            }
+        """)
+        
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Barra de herramientas simple
+        toolbar = QFrame()
+        toolbar.setStyleSheet("background-color: #e0e0e0; padding: 5px;")
+        toolbar_layout = QHBoxLayout()
+        
+        self.lbl_modo = QLabel("👆 Modo: Selección")
+        
+        self.btn_texto = QPushButton("📝 Agregar Texto")
+        self.btn_texto.clicked.connect(lambda: self.cambiar_modo("agregar_texto"))
+        
+        self.btn_seleccion = QPushButton("👆 Seleccionar")
+        self.btn_seleccion.clicked.connect(lambda: self.cambiar_modo("seleccion"))
+        
+        toolbar_layout.addWidget(self.lbl_modo)
+        toolbar_layout.addWidget(self.btn_seleccion)
+        toolbar_layout.addWidget(self.btn_texto)
+        toolbar_layout.addStretch()
+        
+        toolbar.setLayout(toolbar_layout)
+        layout.addWidget(toolbar)
+        
+        # Área de scroll para el PDF
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        
+        self.container = QWidget()
+        self.container_layout = QVBoxLayout()
+        self.container_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        self.lbl_imagen = QLabel("📄 Selecciona un PDF para comenzar")
+        self.lbl_imagen.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_imagen.setStyleSheet("""
+            QLabel {
+                background-color: white;
+                color: #666;
+                font-size: 16px;
+                padding: 50px;
+                border: 2px dashed #999;
+                border-radius: 10px;
+                min-width: 600px;
+                min-height: 400px;
+            }
+        """)
+        self.lbl_imagen.mousePressEvent = self.on_click_imagen
+        
+        self.container_layout.addWidget(self.lbl_imagen)
+        self.container.setLayout(self.container_layout)
+        self.scroll_area.setWidget(self.container)
+        
+        layout.addWidget(self.scroll_area)
+        self.setLayout(layout)
+    
+    def cambiar_modo(self, modo: str):
+        """Cambia el modo de interacción"""
+        self.modo_actual = modo
+        
+        if modo == "seleccion":
+            self.lbl_modo.setText("👆 Modo: Selección")
+            self.lbl_imagen.setCursor(Qt.CursorShape.ArrowCursor)
+        elif modo == "agregar_texto":
+            self.lbl_modo.setText("📝 Modo: Agregar Texto")
+            self.lbl_imagen.setCursor(Qt.CursorShape.CrossCursor)
+    
+    def cargar_pdf(self, pdf_path: str):
+        """Carga y muestra un PDF"""
+        if not PDF_SUPPORT:
+            self.mostrar_error("PyMuPDF no está instalado. Instala con: pip install PyMuPDF")
+            return
+        
+        self.pdf_path = pdf_path
+        
+        try:
+            doc = fitz.open(pdf_path)
+            pagina = doc[0]
+            
+            # Renderizar a buena resolución
+            zoom = 1.5  # 150% para mejor visualización
+            mat = fitz.Matrix(zoom, zoom)
+            pix = pagina.get_pixmap(matrix=mat, alpha=False)
+            
+            # Convertir a QImage
+            img_format = QImage.Format.Format_RGB888
+            qimage = QImage(pix.samples, pix.width, pix.height, pix.stride, img_format)
+            
+            # Guardar como QPixmap
+            self.imagen_pdf = QPixmap.fromImage(qimage)
+            
+            # Calcular escala (px por mm)
+            ancho_px = pix.width
+            alto_px = pix.height
+            ancho_mm = 210 * zoom  # A4 ancho en mm * zoom
+            self.escala = ancho_px / ancho_mm
+            
+            # Mostrar imagen
+            self.lbl_imagen.setPixmap(self.imagen_pdf)
+            self.lbl_imagen.setFixedSize(ancho_px, alto_px)
+            
+            # Limpiar estilo
+            self.lbl_imagen.setStyleSheet("background-color: white;")
+            
+            doc.close()
+            
+            print(f"PDF cargado: {pdf_path}")
+            print(f"Dimensiones: {ancho_px}x{alto_px}px, Escala: {self.escala:.2f}px/mm")
+            
+        except Exception as e:
+            self.mostrar_error(f"Error cargando PDF: {str(e)}")
+            traceback.print_exc()
+    
+    def mostrar_error(self, mensaje: str):
+        """Muestra mensaje de error"""
+        self.lbl_imagen.setText(f"❌ Error\n\n{mensaje}")
+        self.lbl_imagen.setStyleSheet("""
+            QLabel {
+                background-color: #ffe6e6;
+                color: #cc0000;
+                font-size: 14px;
+                padding: 50px;
+                border: 2px solid #ff9999;
+                border-radius: 10px;
+                min-width: 600px;
+                min-height: 400px;
+            }
+        """)
+    
+    def on_click_imagen(self, event):
+        """Maneja clics en la imagen del PDF"""
+        if not self.imagen_pdf:
+            return
+        
+        pos = event.pos()
+        
+        if self.modo_actual == "seleccion":
+            # Seleccionar campo existente
+            for campo in self.campos:
+                if campo.geometry().contains(pos):
+                    self.seleccionar_campo(campo)
+                    return
+        elif self.modo_actual == "agregar_texto":
+            # Agregar nuevo campo de texto
+            x_mm = pos.x() / self.escala
+            y_mm = pos.y() / self.escala
+            
+            # Crear campo
+            campo = CampoTextoWidget("Nuevo Campo", "texto", self.lbl_imagen)
+            campo.move(pos.x() - 50, pos.y() - 15)  # Centrar en el clic
+            campo.show()
+            
+            # Conectar señales
+            campo.campo_seleccionado.connect(self.seleccionar_campo)
+            campo.campo_modificado.connect(self.on_campo_modificado)
+            campo.solicita_eliminar.connect(self.eliminar_campo)
+            
+            self.campos.append(campo)
+            self.seleccionar_campo(campo)
+            
+            # Emitir señal
+            self.campo_agregado.emit({
+                "tipo": "texto",
+                "x": x_mm,
+                "y": y_mm,
+                "nombre": "Nuevo Campo"
+            })
+    
+    def seleccionar_campo(self, campo):
+        """Selecciona un campo"""
+        if self.campo_seleccionado:
+            self.campo_seleccionado.set_seleccionado(False)
+        
+        self.campo_seleccionado = campo
+        campo.set_seleccionado(True)
+    
+    def on_campo_modificado(self, cambios):
+        """Cuando se modifica un campo"""
+        if self.campo_seleccionado:
+            print(f"Campo modificado: {cambios}")
+    
+    def eliminar_campo(self, campo):
+        """Elimina un campo"""
+        if campo in self.campos:
+            self.campos.remove(campo)
+            campo.deleteLater()
+            
+            if self.campo_seleccionado == campo:
+                self.campo_seleccionado = None
+
+# ================== PANEL PROPIEDADES SIMPLIFICADO ==================
+class PanelPropiedades(QFrame):
+    """Panel de propiedades simplificado"""
+    
+    propiedades_cambiadas = pyqtSignal(dict)
+    
+    def __init__(self):
+        super().__init__()
+        self.campo_actual = None
+        self.setup_ui()
+    
+    def setup_ui(self):
+        """Configura la interfaz"""
+        self.setFrameStyle(QFrame.Shape.StyledPanel)
+        self.setStyleSheet("""
+            PanelPropiedades {
+                background-color: white;
+                border: 1px solid #ddd;
+                padding: 10px;
+            }
+        """)
+        
+        layout = QVBoxLayout()
+        
+        # Título
+        self.lbl_titulo = QLabel("⚙️ Propiedades del Campo")
+        self.lbl_titulo.setStyleSheet("font-size: 14px; font-weight: bold;")
+        layout.addWidget(self.lbl_titulo)
+        
+        # Scroll area
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        
+        widget_contenido = QWidget()
+        contenido_layout = QVBoxLayout()
+        
+        # Nombre del campo
+        self.txt_nombre = QLineEdit()
+        self.txt_nombre.setPlaceholderText("Nombre del campo...")
+        self.txt_nombre.textChanged.connect(self.emitir_cambios)
+        contenido_layout.addWidget(QLabel("Nombre:"))
+        contenido_layout.addWidget(self.txt_nombre)
+        
+        # Texto
+        self.txt_texto = QLineEdit()
+        self.txt_texto.setPlaceholderText("Texto a mostrar...")
+        self.txt_texto.textChanged.connect(self.emitir_cambios)
+        contenido_layout.addWidget(QLabel("Texto:"))
+        contenido_layout.addWidget(self.txt_texto)
+        
+        # Columna CSV
+        self.combo_columna = QComboBox()
+        self.combo_columna.addItems(["", "cuenta", "nombre", "direccion", "telefono", "monto"])
+        self.combo_columna.currentTextChanged.connect(self.emitir_cambios)
+        contenido_layout.addWidget(QLabel("Columna CSV:"))
+        contenido_layout.addWidget(self.combo_columna)
+        
+        # Botones de estilo
+        layout_botones = QHBoxLayout()
+        
+        self.btn_fuente = QPushButton("🔤 Fuente")
+        self.btn_fuente.clicked.connect(self.cambiar_fuente)
+        
+        self.btn_color = QPushButton("🎨 Color")
+        self.btn_color.clicked.connect(self.cambiar_color)
+        
+        layout_botones.addWidget(self.btn_fuente)
+        layout_botones.addWidget(self.btn_color)
+        contenido_layout.addLayout(layout_botones)
+        
+        # Checkboxes
+        self.check_negrita = QCheckBox("Negrita")
+        self.check_negrita.stateChanged.connect(self.emitir_cambios)
+        
+        self.check_cursiva = QCheckBox("Cursiva")
+        self.check_cursiva.stateChanged.connect(self.emitir_cambios)
+        
+        contenido_layout.addWidget(self.check_negrita)
+        contenido_layout.addWidget(self.check_cursiva)
+        
+        widget_contenido.setLayout(contenido_layout)
+        scroll.setWidget(widget_contenido)
+        layout.addWidget(scroll)
+        
+        self.setLayout(layout)
+    
+    def cambiar_fuente(self):
+        """Abre diálogo de fuente"""
+        if self.campo_actual:
+            self.campo_actual.cambiar_fuente()
+    
+    def cambiar_color(self):
+        """Abre diálogo de color"""
+        if self.campo_actual:
+            self.campo_actual.cambiar_color()
+    
+    def emitir_cambios(self):
+        """Emitir propiedades cuando cambian"""
+        if self.campo_actual:
+            props = {
+                "nombre": self.txt_nombre.text(),
+                "texto": self.txt_texto.text(),
+                "columna_csv": self.combo_columna.currentText(),
+                "negrita": self.check_negrita.isChecked(),
+                "cursiva": self.check_cursiva.isChecked()
+            }
+            self.propiedades_cambiadas.emit(props)
+    
+    def mostrar_campo(self, campo):
+        """Muestra propiedades de un campo"""
+        self.campo_actual = campo
+        
+        if campo:
+            self.txt_nombre.setText(campo.nombre)
+            self.txt_texto.setText(campo.config["texto"])
+            self.combo_columna.setCurrentText(campo.config.get("columna_padron", ""))
+            self.check_negrita.setChecked(campo.config.get("negrita", False))
+            self.check_cursiva.setChecked(campo.config.get("cursiva", False))
+            
+            self.lbl_titulo.setText(f"⚙️ {campo.nombre}")
+        else:
+            self.lbl_titulo.setText("⚙️ Propiedades del Campo")
+
+# ================== EDITOR VISUAL PRINCIPAL ==================
 class EditorVisual(QWidget):
-    """Editor visual principal (3 paneles como lo describiste)"""
+    """Editor visual principal"""
     
-    plantilla_guardada = pyqtSignal(dict)  # Configuración completa
+    plantilla_guardada = pyqtSignal(dict)
     
-    def __init__(self, usuario, proyecto_id, pdf_path, plantilla_id=None):
+    def __init__(self, usuario, proyecto_id, pdf_path=None, stacked_widget=None):
         super().__init__()
         self.usuario = usuario
         self.proyecto_id = proyecto_id
         self.pdf_path = pdf_path
-        self.plantilla_id = plantilla_id
-        self.campos = []  # Lista de objetos CampoWidget
-        self.tipo_campo_actual = "texto"  # Tipo por defecto
-        self.columnas_padron = []  # Columnas del padrón
-        self.uuid_padron = None    # UUID del padrón del proyecto
+        self.stacked_widget = stacked_widget
+        self.campos = []
         
         self.setup_ui()
-        self.cargar_datos_proyecto()  # Cargar proyecto primero
-        self.cargar_columnas_padron()  # Obtener columnas del padrón
         
-        # Debug
-        print(f"DEBUG: EditorVisual inicializado")
-        print(f"  PDF: {pdf_path}")
-        print(f"  Proyecto ID: {proyecto_id}")
-        print(f"  Tipo campo actual: {self.tipo_campo_actual}")
+        # Si se proporcionó un PDF, cargarlo
+        if pdf_path and os.path.exists(pdf_path):
+            self.cargar_pdf(pdf_path)
     
     def setup_ui(self):
-        """Configura la interfaz de 3 paneles"""
-        # Layout principal
-        main_layout = QVBoxLayout()
-        main_layout.setSpacing(0)
-        main_layout.setContentsMargins(0, 0, 0, 0)
+        """Configura la interfaz del editor"""
+        self.setWindowTitle("🎨 Editor de Plantillas")
         
-        # Barra de título
-        title_bar = QFrame()
-        title_bar.setStyleSheet("""
-            QFrame {
-                background-color: #2c3e50;
-                padding: 10px;
-            }
-        """)
+        layout = QVBoxLayout()
+        layout.setSpacing(0)
+        layout.setContentsMargins(0, 0, 0, 0)
         
-        title_layout = QHBoxLayout()
+        # Barra superior
+        toolbar_superior = QFrame()
+        toolbar_superior.setStyleSheet("background-color: #2c3e50; padding: 10px;")
+        layout_toolbar = QHBoxLayout()
         
-        lbl_title = QLabel("🎨 Editor de Plantillas")
-        lbl_title.setFont(QFont("Arial", 14, QFont.Weight.Bold))
-        lbl_title.setStyleSheet("color: white;")
+        lbl_titulo = QLabel("Editor de Plantillas")
+        lbl_titulo.setStyleSheet("color: white; font-size: 16px; font-weight: bold;")
         
-        self.lbl_pdf = QLabel(f"PDF: {os.path.basename(self.pdf_path)}")
-        self.lbl_pdf.setStyleSheet("color: #bdc3c7; font-size: 12px;")
+        btn_abrir = QPushButton("📂 Abrir PDF")
+        btn_abrir.clicked.connect(self.abrir_pdf)
         
-        self.lbl_estado = QLabel("Selecciona un tipo de campo y haz clic en el PDF")
-        self.lbl_estado.setStyleSheet("color: #ecf0f1; font-size: 11px; font-style: italic;")
+        btn_guardar = QPushButton("💾 Guardar")
+        btn_guardar.clicked.connect(self.guardar_plantilla)
+        btn_guardar.setStyleSheet("background-color: #27ae60; color: white;")
         
-        title_layout.addWidget(lbl_title)
-        title_layout.addWidget(self.lbl_pdf)
-        title_layout.addStretch()
-        title_layout.addWidget(self.lbl_estado)
-        title_bar.setLayout(title_layout)
+        btn_cancelar = QPushButton("❌ Cancelar")
+        btn_cancelar.clicked.connect(self.cancelar)
+        btn_cancelar.setStyleSheet("background-color: #e74c3c; color: white;")
         
-        main_layout.addWidget(title_bar)
+        layout_toolbar.addWidget(lbl_titulo)
+        layout_toolbar.addStretch()
+        layout_toolbar.addWidget(btn_abrir)
+        layout_toolbar.addWidget(btn_guardar)
+        layout_toolbar.addWidget(btn_cancelar)
         
-        # Área de trabajo principal (3 paneles)
+        toolbar_superior.setLayout(layout_toolbar)
+        layout.addWidget(toolbar_superior)
+        
+        # Área principal
         splitter = QSplitter(Qt.Orientation.Horizontal)
         
-        # Panel izquierdo: Tipos de campos
-        self.panel_campos = PanelCampos()
-        self.panel_campos.campo_solicitado.connect(self.on_campo_solicitado)
-        splitter.addWidget(self.panel_campos)
-        
-        # Panel central: Preview del PDF
-        print(f"DEBUG: Creando PreviewPDF con: {self.pdf_path}")
-        try:
-            self.preview_pdf = PreviewPDF(self.pdf_path)
-            
-            # ¡CONECTAR LAS SEÑALES! - ESTO ES CRÍTICO
-            self.preview_pdf.click_posicion.connect(self.on_click_pdf)
-            self.preview_pdf.campo_seleccionado.connect(self.on_campo_seleccionado)
-            
-            print(f"DEBUG: PreviewPDF creado, señales conectadas")
-        except Exception as e:
-            print(f"ERROR creando PreviewPDF: {e}")
-            traceback.print_exc()
-            # Crear placeholder de error
-            self.preview_pdf = QFrame()
-            self.preview_pdf.setStyleSheet("background-color: #ffcccc;")
-            error_label = QLabel(f"❌ Error cargando PDF:\n{str(e)[:100]}")
-            error_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            layout_error = QVBoxLayout()
-            layout_error.addWidget(error_label)
-            self.preview_pdf.setLayout(layout_error)
-        
+        # Panel izquierdo - Preview PDF
+        self.preview_pdf = PreviewPDF()
+        self.preview_pdf.campo_agregado.connect(self.on_campo_agregado)
         splitter.addWidget(self.preview_pdf)
         
-        # Panel derecho: Propiedades
+        # Panel derecho - Propiedades
         self.panel_propiedades = PanelPropiedades()
         self.panel_propiedades.propiedades_cambiadas.connect(self.on_propiedades_cambiadas)
         splitter.addWidget(self.panel_propiedades)
         
-        # Configurar tamaños iniciales
-        splitter.setSizes([200, 600, 300])
+        # Configurar tamaños
+        splitter.setSizes([700, 300])
+        layout.addWidget(splitter)
         
-        main_layout.addWidget(splitter)
+        # Barra inferior
+        barra_inferior = QFrame()
+        barra_inferior.setStyleSheet("background-color: #34495e; padding: 5px;")
+        layout_inferior = QHBoxLayout()
         
-        # Barra inferior con botones
-        bottom_bar = QFrame()
-        bottom_bar.setStyleSheet("""
-            QFrame {
-                background-color: #ecf0f1;
-                padding: 10px;
-                border-top: 1px solid #bdc3c7;
-            }
-        """)
+        self.lbl_estado = QLabel("Listo")
+        self.lbl_estado.setStyleSheet("color: white;")
         
-        bottom_layout = QHBoxLayout()
+        self.lbl_info = QLabel("Haz clic en el PDF para agregar campos de texto")
+        self.lbl_info.setStyleSheet("color: #bdc3c7; font-size: 12px;")
         
-        # Contador de campos
-        self.lbl_contador = QLabel("Campos: 0")
-        self.lbl_contador.setStyleSheet("color: #7f8c8d; font-weight: bold;")
+        layout_inferior.addWidget(self.lbl_estado)
+        layout_inferior.addStretch()
+        layout_inferior.addWidget(self.lbl_info)
         
-        # Botón previsualizar
-        btn_preview = QPushButton("👁️ Previsualizar")
-        btn_preview.clicked.connect(self.previsualizar)
-        btn_preview.setStyleSheet("""
-            QPushButton {
-                background-color: #3498db;
-                color: white;
-                border: none;
-                padding: 8px 15px;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #2980b9;
-            }
-        """)
+        barra_inferior.setLayout(layout_inferior)
+        layout.addWidget(barra_inferior)
         
-        # Botón guardar
-        btn_guardar = QPushButton("💾 Guardar Plantilla")
-        btn_guardar.clicked.connect(self.guardar_plantilla)
-        btn_guardar.setStyleSheet("""
-            QPushButton {
-                background-color: #2ecc71;
-                color: white;
-                border: none;
-                padding: 8px 15px;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #27ae60;
-            }
-        """)
-        
-        # Botón cancelar
-        btn_cancelar = QPushButton("❌ Cancelar")
-        btn_cancelar.clicked.connect(self.cancelar)
-        btn_cancelar.setStyleSheet("""
-            QPushButton {
-                background-color: #e74c3c;
-                color: white;
-                border: none;
-                padding: 8px 15px;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #c0392b;
-            }
-        """)
-        
-        bottom_layout.addWidget(self.lbl_contador)
-        bottom_layout.addWidget(btn_preview)
-        bottom_layout.addStretch()
-        bottom_layout.addWidget(btn_cancelar)
-        bottom_layout.addWidget(btn_guardar)
-        
-        bottom_bar.setLayout(bottom_layout)
-        main_layout.addWidget(bottom_bar)
-        
-        self.setLayout(main_layout)
-        
-        # Establecer foco
-        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setLayout(layout)
+        self.resize(1000, 700)
     
-    def cargar_datos_proyecto(self):
-        """Carga el proyecto para obtener el UUID del padrón"""
-        from config.database import SessionLocal
-        from core.models import Proyecto
+    def cargar_pdf(self, pdf_path: str):
+        """Carga un PDF en el preview"""
+        print(f"EditorVisual.cargar_pdf llamado con: {pdf_path}")
+        self.pdf_path = pdf_path
+        self.lbl_estado.setText(f"Cargando PDF: {os.path.basename(pdf_path)}")
         
-        db = SessionLocal()
-        try:
-            proyecto = db.query(Proyecto).filter(Proyecto.id == self.proyecto_id).first()
-            if proyecto and proyecto.tabla_padron:
-                self.uuid_padron = proyecto.tabla_padron
-                print(f"DEBUG: Proyecto {self.proyecto_id} - UUID padrón: {self.uuid_padron}")
-            else:
-                print(f"DEBUG: Proyecto sin padrón configurado")
-                self.lbl_estado.setText("⚠️ Proyecto sin padrón configurado - usando datos de ejemplo")
-        except Exception as e:
-            print(f"ERROR cargando proyecto: {e}")
-        finally:
-            db.close()
+        # Usar QTimer para procesar en el siguiente ciclo de eventos
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(100, lambda: self.preview_pdf.cargar_pdf(pdf_path))
+        
+        self.lbl_info.setText(f"PDF cargado. Usa el botón '📝 Agregar Texto' para crear campos.")
     
-    def cargar_columnas_padron(self):
-        """Carga las columnas del padrón del proyecto"""
-        # Columnas de ejemplo como fallback
-        columnas_ejemplo = [
-            {"nombre": "cuenta", "tipo": "texto", "ejemplo": "123456"},
-            {"nombre": "codigo_afiliado", "tipo": "texto", "ejemplo": "A001"},
-            {"nombre": "nombre", "tipo": "texto", "ejemplo": "Juan Pérez"},
-            {"nombre": "adeudo", "tipo": "numero", "ejemplo": "12500.50"},
-            {"nombre": "fecha_convenio", "tipo": "fecha", "ejemplo": "2024-01-15"},
-            {"nombre": "telefono", "tipo": "texto", "ejemplo": "5512345678"},
-            {"nombre": "direccion", "tipo": "texto", "ejemplo": "Calle Principal 123"},
-            {"nombre": "rfc", "tipo": "texto", "ejemplo": "XAXX010101000"},
-        ]
+    def abrir_pdf(self):
+        """Abre diálogo para seleccionar PDF"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Seleccionar PDF", "", "Archivos PDF (*.pdf)"
+        )
         
-        # Intentar cargar columnas reales si hay UUID
-        if self.uuid_padron:
-            try:
-                from config.database import SessionLocal
-                from core.padron_service import PadronService
-                
-                db = SessionLocal()
-                padron_service = PadronService(db)
-                columnas_reales = padron_service.obtener_columnas_padron(self.uuid_padron)
-                
-                if columnas_reales:
-                    self.columnas_padron = columnas_reales
-                    print(f"DEBUG: Se cargaron {len(columnas_reales)} columnas reales del padrón")
-                else:
-                    self.columnas_padron = columnas_ejemplo
-                    print(f"DEBUG: Usando columnas de ejemplo (no se encontraron reales)")
-            except Exception as e:
-                print(f"ERROR cargando columnas reales: {e}")
-                self.columnas_padron = columnas_ejemplo
-        else:
-            self.columnas_padron = columnas_ejemplo
-            print(f"DEBUG: Usando columnas de ejemplo (sin UUID de padrón)")
-        
-        # Pasar columnas al panel de propiedades
-        self.panel_propiedades.cargar_columnas_padron(self.columnas_padron)
+        if file_path:
+            self.cargar_pdf(file_path)
     
-    # --- MANEJO DE EVENTOS ---
-    
-    def on_campo_solicitado(self, tipo_campo):
-        """Cuando se selecciona un tipo de campo en el panel izquierdo"""
-        self.tipo_campo_actual = tipo_campo
-        self.lbl_estado.setText(f"✅ Listo: Haz clic en el PDF para agregar campo '{tipo_campo}'")
-        print(f"DEBUG: Tipo de campo seleccionado: {tipo_campo}")
-        
-        # Feedback visual breve
-        original_text = self.lbl_estado.text()
-        QMessageBox.information(self, "Listo", 
-                              f"Ahora haz clic en el PDF donde quieres el campo '{tipo_campo}'")
-    
-    def on_click_pdf(self, x_mm, y_mm):
-        """Cuando se hace clic en el PDF"""
-        print(f"DEBUG: on_click_pdf recibido: ({x_mm}, {y_mm})")
-        print(f"DEBUG: Click en PDF - Posición: {x_mm}mm, {y_mm}mm")
-        print(f"DEBUG: Agregando campo tipo: {self.tipo_campo_actual}")
-        
-        # Tamaños por defecto según tipo
-        tamanos = {
-            "texto": {"ancho": 50, "alto": 10},
-            "tabla": {"ancho": 150, "alto": 60},
-            "imagen": {"ancho": 80, "alto": 80},
-            "fecha": {"ancho": 40, "alto": 10},
-            "moneda": {"ancho": 60, "alto": 10},
-            "codigo_barras": {"ancho": 100, "alto": 30},
-            "numero": {"ancho": 40, "alto": 10}
-        }
-        
-        tamano = tamanos.get(self.tipo_campo_actual, {"ancho": 50, "alto": 10})
-        
-        try:
-            # Crear campo del tipo actual
-            campo = CampoWidget(
-                tipo=self.tipo_campo_actual,
-                x_mm=x_mm,
-                y_mm=y_mm,
-                ancho_mm=tamano["ancho"],
-                alto_mm=tamano["alto"]
-            )
-            
-            # Nombre por defecto
-            campo.config["nombre"] = f"{self.tipo_campo_actual}_{len(self.campos) + 1}"
-            
-            # Conectar señales
-            campo.campo_seleccionado.connect(self.on_campo_seleccionado)
-            campo.campo_modificado.connect(self.on_campo_modificado)
-            
-            # Agregar al preview
-            self.preview_pdf.agregar_campo_visual(campo)
-            self.campos.append(campo)
-            
-            # Seleccionar automáticamente
-            self.on_campo_seleccionado(campo)
-            
-            # Actualizar contador
-            self.lbl_contador.setText(f"Campos: {len(self.campos)}")
-            
-            # Feedback
-            self.lbl_estado.setText(f"✅ Campo '{self.tipo_campo_actual}' agregado en ({x_mm}mm, {y_mm}mm)")
-            
-            print(f"DEBUG: Campo creado exitosamente")
-            
-        except Exception as e:
-            print(f"ERROR creando campo: {e}")
-            traceback.print_exc()
-            QMessageBox.critical(self, "Error", f"No se pudo crear el campo: {str(e)}")
-    
-    def on_campo_seleccionado(self, campo):
-        """Cuando se selecciona un campo (click en él)"""
-        print(f"DEBUG: Campo seleccionado: {campo.config.get('nombre', 'sin nombre')}")
-        
-        # Actualizar panel de propiedades
-        self.panel_propiedades.mostrar_campo(campo)
-        
-        # Actualizar estado
-        nombre = campo.config.get("nombre", "Campo sin nombre")
-        self.lbl_estado.setText(f"📌 Campo seleccionado: '{nombre}'")
-    
-    def on_campo_modificado(self, cambios):
-        """Cuando se modifica un campo (arrastre, etc.)"""
-        # Actualizar propiedades si están visibles
-        if self.panel_propiedades.campo_actual:
-            self.panel_propiedades.mostrar_campo(self.panel_propiedades.campo_actual)
+    def on_campo_agregado(self, config):
+        """Cuando se agrega un nuevo campo"""
+        self.campos.append(config)
+        self.panel_propiedades.campo_actual = self.preview_pdf.campo_seleccionado
+        self.lbl_estado.setText(f"Campo agregado: {config.get('nombre', 'Nuevo')}")
     
     def on_propiedades_cambiadas(self, propiedades):
-        """Cuando cambian las propiedades en el panel derecho"""
-        if self.panel_propiedades.campo_actual:
-            print(f"DEBUG: Propiedades cambiadas para campo")
-            self.panel_propiedades.campo_actual.actualizar_config(propiedades)
-    
-    def previsualizar(self):
-        """Genera una previsualización del PDF con datos de ejemplo"""
-        if not self.campos:
-            QMessageBox.warning(self, "Sin campos", "No hay campos para previsualizar")
-            return
-        
-        # Generar datos de ejemplo
-        datos_ejemplo = {}
-        for columna in self.columnas_padron:
-            nombre = columna["nombre"]
-            ejemplo = columna.get("ejemplo", "Ejemplo")
-            datos_ejemplo[nombre] = ejemplo
-        
-        # Agregar campos especiales
-        datos_ejemplo["fecha_actual"] = "15/01/2024"
-        datos_ejemplo["codigo_barras"] = "|123456789|"
-        datos_ejemplo["texto_fijo"] = "Texto fijo de ejemplo"
-        
-        # Mostrar diálogo de previsualización
-        from PyQt6.QtWidgets import QDialog, QTextEdit
-        
-        dialog = QDialog(self)
-        dialog.setWindowTitle("📄 Previsualización de Datos")
-        dialog.setMinimumSize(500, 400)
-        
-        layout = QVBoxLayout()
-        
-        lbl_info = QLabel("Datos que se insertarán en los campos:")
-        layout.addWidget(lbl_info)
-        
-        text_edit = QTextEdit()
-        text_edit.setReadOnly(True)
-        
-        # Formatear datos
-        texto = "=== DATOS DE EJEMPLO ===\n\n"
-        for campo in self.campos:
-            nombre = campo.config.get("nombre", "sin nombre")
-            columna = campo.config.get("columna_padron", "no mapeado")
+        """Cuando cambian las propiedades de un campo"""
+        campo = self.preview_pdf.campo_seleccionado
+        if campo:
+            # Actualizar configuración del campo
+            for key, value in propiedades.items():
+                campo.config[key] = value
             
-            if columna:
-                if columna.startswith("especial:"):
-                    valor = datos_ejemplo.get(columna.replace("especial:", ""), "N/A")
-                else:
-                    valor = datos_ejemplo.get(columna, "N/A")
-            else:
-                valor = "[NO MAPEADO]"
+            # Actualizar visualmente
+            if "texto" in propiedades:
+                campo.label.setText(propiedades["texto"])
+                campo.config["texto"] = propiedades["texto"]
             
-            texto += f"• {nombre}: {valor}\n"
-        
-        text_edit.setText(texto)
-        layout.addWidget(text_edit)
-        
-        btn_cerrar = QPushButton("Cerrar")
-        btn_cerrar.clicked.connect(dialog.close)
-        layout.addWidget(btn_cerrar)
-        
-        dialog.setLayout(layout)
-        dialog.exec()
+            if "nombre" in propiedades:
+                campo.nombre = propiedades["nombre"]
+                campo.config["nombre"] = propiedades["nombre"]
     
     def guardar_plantilla(self):
-        """Guarda la configuración de la plantilla"""
-        # Validar que haya campos
-        if not self.campos:
-            QMessageBox.warning(self, "Sin campos", 
-                              "Debes agregar al menos un campo a la plantilla")
+        """Guarda la plantilla"""
+        if not self.preview_pdf.campos:
+            QMessageBox.warning(self, "Guardar", "No hay campos para guardar")
             return
-        
-        # Recopilar configuración
-        configuracion = {
-            "version": "2.0",
-            "pdf_base": self.pdf_path,
-            "uuid_padron": self.uuid_padron,
-            "campos": {},
-            "metadata": {
-                "proyecto_id": self.proyecto_id,
-                "usuario_creador": self.usuario.id if self.usuario else 0
-            }
-        }
-        
-        for campo in self.campos:
-            configuracion["campos"][campo.config["nombre"]] = {
-                "tipo": campo.tipo,
-                "config": campo.config,
-                "posicion": {
-                    "x": campo.x_mm,
-                    "y": campo.y_mm,
-                    "ancho": campo.ancho_mm,
-                    "alto": campo.alto_mm
-                }
-            }
         
         # Pedir nombre
         nombre, ok = QInputDialog.getText(
-            self, 
-            "Nombre de la plantilla",
+            self, "Nombre de plantilla",
             "Ingresa un nombre para la plantilla:",
-            text=f"Plantilla con {len(self.campos)} campos"
+            text=f"Plantilla con {len(self.preview_pdf.campos)} campos"
         )
         
         if not ok or not nombre.strip():
             return
         
-        configuracion["metadata"]["nombre_plantilla"] = nombre.strip()
+        # Recopilar configuración
+        configuracion = {
+            "nombre": nombre.strip(),
+            "pdf_base": self.pdf_path,
+            "campos": [],
+            "metadata": {
+                "proyecto_id": self.proyecto_id,
+                "usuario": self.usuario.id if self.usuario else 0
+            }
+        }
+        
+        # Guardar configuración de cada campo
+        for campo_widget in self.preview_pdf.campos:
+            if isinstance(campo_widget, CampoTextoWidget):
+                configuracion["campos"].append(campo_widget.config)
         
         # Emitir señal
-        print(f"DEBUG: Emitiendo señal plantilla_guardada con {len(self.campos)} campos")
         self.plantilla_guardada.emit(configuracion)
         
-        QMessageBox.information(self, "Éxito", 
-                              f"✅ Plantilla '{nombre}' guardada con {len(self.campos)} campos")
+        QMessageBox.information(
+            self, "Éxito",
+            f"✅ Plantilla '{nombre}' guardada con {len(configuracion['campos'])} campos"
+        )
+        
+        # Cerrar editor si está en stacked widget
+        if self.stacked_widget:
+            self.stacked_widget.removeWidget(self)
     
     def cancelar(self):
         """Cancela la edición"""
@@ -467,18 +780,14 @@ class EditorVisual(QWidget):
         )
         
         if reply == QMessageBox.StandardButton.Yes:
-            self.plantilla_guardada.emit({})  # Diccionario vacío indica cancelación
+            # Emitir señal vacía para indicar cancelación
+            self.plantilla_guardada.emit({})
+            
+            # Cerrar editor si está en stacked widget
+            if self.stacked_widget:
+                self.stacked_widget.removeWidget(self)
     
-    def keyPressEvent(self, event):
-        """Maneja atajos de teclado"""
-        # Escape para cancelar
-        if event.key() == Qt.Key.Key_Escape:
-            self.cancelar()
-        # Ctrl+S para guardar
-        elif event.key() == Qt.Key.Key_S and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
-            self.guardar_plantilla()
-        # Ctrl+P para previsualizar
-        elif event.key() == Qt.Key.Key_P and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
-            self.previsualizar()
-        else:
-            super().keyPressEvent(event)
+    def closeEvent(self, event):
+        """Maneja cierre de ventana"""
+        self.cancelar()
+        event.accept()

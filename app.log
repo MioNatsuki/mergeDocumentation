@@ -14,3 +14,8 @@
 2025-12-04 12:10:23,678 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 1
 2025-12-04 12:21:51,518 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 1
 2025-12-04 12:32:00,311 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 1
+2025-12-04 16:02:03,261 - correspondencia_app - INFO - AUDITORIA - auth.login_fallido - Usuario: None
+2025-12-04 16:02:07,968 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 1
+2025-12-04 16:05:49,740 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 1
+2025-12-04 16:37:31,778 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 1
+2025-12-04 16:45:47,828 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 1

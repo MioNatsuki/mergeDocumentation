@@ -89,7 +89,6 @@ class DashboardPlantillasMejorado(QWidget):
             }
             QPushButton:hover {
                 background-color: #F57C00;
-                transform: translateY(-1px);
             }
         """)
         top_bar.addWidget(self.btn_nueva)

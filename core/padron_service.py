@@ -50,7 +50,7 @@ class PadronService:
             return None
         
     def obtener_columnas_padron(self, uuid_padron: str) -> List[Dict]:
-        """Obtiene las columnas de una tabla de padrón específica"""
+        """Obtiene las columnas REALES de una tabla de padrón específica"""
         try:
             # 1. Obtener el identificador del padrón
             identificador = self.db.query(IdentificadorPadrones).filter(
@@ -61,12 +61,11 @@ class PadronService:
                 print(f"DEBUG: No se encontró padrón con UUID: {uuid_padron}")
                 return []
             
-            # 2. Obtener el nombre real de la tabla
-            nombre_tabla = identificador.nombre_tabla
-            print(f"DEBUG: Buscando columnas de tabla: {nombre_tabla}")
+            # 2. Obtener el nombre REAL de la tabla
+            nombre_tabla_real = identificador.nombre_tabla
+            print(f"DEBUG: Buscando columnas de tabla REAL: {nombre_tabla_real}")
             
-            # 3. Consultar information_schema para obtener columnas
-            # (Esto requiere permisos de lectura en information_schema)
+            # 3. Consultar information_schema para obtener columnas REALES
             query = text("""
                 SELECT 
                     column_name as nombre,
@@ -74,20 +73,17 @@ class PadronService:
                     is_nullable as nullable,
                     column_default as valor_default
                 FROM information_schema.columns 
-                WHERE table_name = :table_name
+                WHERE table_schema = 'public'
+                AND table_name = :table_name
                 ORDER BY ordinal_position
             """)
             
-            resultado = self.db.execute(query, {"table_name": nombre_tabla})
+            resultado = self.db.execute(query, {"table_name": nombre_tabla_real})
             columnas = []
             
             for row in resultado:
-                # Filtrar columnas que no queremos mostrar
+                # Excluir columnas de sistema/metadatos que no queremos mostrar
                 nombre = row.nombre
-                
-                # Excluir columnas de sistema/metadatos
-                if nombre in ['id', 'created_at', 'updated_at', 'uuid_padron']:
-                    continue
                 
                 # Determinar tipo amigable
                 tipo_db = row.tipo
@@ -107,56 +103,20 @@ class PadronService:
                     "tipo_db": tipo_db,
                     "tipo": tipo_amigable,
                     "nullable": row.nullable == 'YES',
-                    "ejemplo": self.generar_ejemplo_por_tipo(nombre, tipo_amigable)
+                    "valor_default": row.valor_default
                 })
             
-            print(f"DEBUG: Se encontraron {len(columnas)} columnas")
+            print(f"DEBUG: Se encontraron {len(columnas)} columnas REALES")
             return columnas
             
         except Exception as e:
-            print(f"ERROR obteniendo columnas: {e}")
+            print(f"ERROR obteniendo columnas REALES: {e}")
             import traceback
             traceback.print_exc()
             return []
     
-    def generar_ejemplo_por_tipo(self, nombre_columna: str, tipo: str) -> str:
-        """Genera un ejemplo basado en el nombre y tipo de columna"""
-        nombre_lower = nombre_columna.lower()
-        
-        if tipo == 'texto':
-            if 'nombre' in nombre_lower:
-                return 'Juan Pérez'
-            elif 'direccion' in nombre_lower or 'domicilio' in nombre_lower:
-                return 'Calle Principal 123, Colonia Centro'
-            elif 'colonia' in nombre_lower:
-                return 'Centro'
-            elif 'ciudad' in nombre_lower or 'municipio' in nombre_lower:
-                return 'Ciudad de México'
-            elif 'rfc' in nombre_lower:
-                return 'XAXX010101000'
-            elif 'email' in nombre_lower or 'correo' in nombre_lower:
-                return 'ejemplo@correo.com'
-            else:
-                return 'Texto de ejemplo'
-        
-        elif tipo == 'numero':
-            if 'telefono' in nombre_lower or 'celular' in nombre_lower:
-                return '5512345678'
-            elif 'cp' in nombre_lower or 'codigo_postal' in nombre_lower:
-                return '01000'
-            elif 'cuenta' in nombre_lower or 'folio' in nombre_lower:
-                return '123456'
-            else:
-                return '1234.56'
-        
-        elif tipo == 'fecha':
-            return '2024-01-15'
-        
-        else:
-            return 'Ejemplo'
-    
-    def obtener_datos_ejemplo(self, uuid_padron: str, limit: int = 5) -> List[Dict]:
-        """Obtiene datos de ejemplo del padrón para previsualización"""
+    def obtener_datos_ejemplo_real(self, uuid_padron: str, limit: int = 3) -> List[Dict]:
+        """Obtiene datos REALES de ejemplo del padrón"""
         try:
             identificador = self.db.query(IdentificadorPadrones).filter(
                 IdentificadorPadrones.uuid_padron == uuid_padron
@@ -165,10 +125,10 @@ class PadronService:
             if not identificador:
                 return []
             
-            nombre_tabla = identificador.nombre_tabla
+            nombre_tabla_real = identificador.nombre_tabla
             
-            # Consulta para obtener algunos registros
-            query = text(f"SELECT * FROM {nombre_tabla} LIMIT {limit}")
+            # Consulta para obtener algunos registros REALES
+            query = text(f"SELECT * FROM {nombre_tabla_real} LIMIT {limit}")
             resultado = self.db.execute(query)
             
             datos = []
@@ -178,5 +138,5 @@ class PadronService:
             return datos
             
         except Exception as e:
-            print(f"Error obteniendo datos ejemplo: {e}")
+            print(f"Error obteniendo datos ejemplo REALES: {e}")
             return []

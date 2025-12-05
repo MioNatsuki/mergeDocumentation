@@ -18,7 +18,6 @@ class PadronService:
             
             return [
                 {
-                    "id": padron.id,
                     "nombre_tabla": padron.nombre_tabla,  # ← CORREGIDO
                     "uuid_padron": padron.uuid_padron,
                     "descripcion": padron.descripcion
@@ -29,6 +28,27 @@ class PadronService:
             print(f"Error obteniendo padrones: {e}")
             return []
     
+    def obtener_todos_registros(self, uuid_padron: str, limit: int = 100) -> List[Dict]:
+        """Obtiene todos los registros de un padrón"""
+        try:
+            identificador = self.obtener_padron_por_uuid(uuid_padron)
+            if not identificador:
+                return []
+            
+            nombre_tabla_real = identificador.nombre_tabla
+            query = text(f"SELECT * FROM {nombre_tabla_real} LIMIT {limit}")
+            resultado = self.db.execute(query)
+            
+            registros = []
+            for row in resultado:
+                registros.append(dict(row._mapping))
+            
+            return registros
+            
+        except Exception as e:
+            print(f"Error obteniendo registros: {e}")
+            return []
+
     def obtener_padron_por_uuid(self, uuid_padron: str) -> Optional[IdentificadorPadrones]:
         """Obtiene un padrón por su UUID"""
         try:

@@ -7,6 +7,7 @@ import os
 from core.models import EmisionTemp, Proyecto
 from datetime import datetime
 import uuid
+from sqlalchemy import text
 
 class CSVService:
     def __init__(self, db: Session):
@@ -125,18 +126,14 @@ class CSVService:
             return False, 0, [f"Error general en procesamiento: {str(e)}"]
     
     def hacer_match_padron(self, proyecto_id: int, sesion_id: str) -> Tuple[bool, int, List[str]]:
-        """
-        Hace match de los registros temporales con el padrón completo
-        Retorna: (éxito, registros_match, errores)
-        """
+        """Hace match REAL con la tabla de padrón"""
         try:
-            # Obtener el proyecto para saber la tabla de padrón
+            # 1. Obtener proyecto y tabla de padrón
             proyecto = self.db.query(Proyecto).filter(Proyecto.id == proyecto_id).first()
             if not proyecto or not proyecto.tabla_padron:
-                return False, 0, ["No se encontró tabla de padrón configurada para el proyecto"]
+                return False, 0, ["No se encontró tabla de padrón configurada"]
             
-            # Aquí iría la lógica específica de match con el padrón
-            # Por ahora, simulamos un match exitoso
+            # 2. Obtener registros temporales
             registros_temp = self.db.query(EmisionTemp).filter(
                 EmisionTemp.proyecto_id == proyecto_id,
                 EmisionTemp.sesion_id == sesion_id,
@@ -144,17 +141,51 @@ class CSVService:
             ).all()
             
             registros_match = 0
+            errores = []
+            
+            # 3. Consulta dinámica a la tabla de padrón
+            nombre_tabla = proyecto.tabla_padron
+            
             for registro in registros_temp:
-                # Simular match (en producción aquí se haría la consulta real al padrón)
-                registro.estado = 'match_ok'
-                registros_match += 1
+                try:
+                    # Construir consulta SQL dinámica
+                    query = f"""
+                        SELECT * FROM {nombre_tabla} 
+                        WHERE cuenta = :cuenta 
+                        OR codigo_afiliado = :codigo
+                        LIMIT 1
+                    """
+                    
+                    result = self.db.execute(
+                        text(query), 
+                        {
+                            "cuenta": registro.cuenta,
+                            "codigo": registro.codigo_afiliado
+                        }
+                    ).fetchone()
+                    
+                    if result:
+                        # Match encontrado, combinar datos
+                        datos_padron = dict(result._mapping)
+                        datos_combinados = {**registro.datos_json, **datos_padron}
+                        registro.datos_json = datos_combinados
+                        registro.estado = 'match_ok'
+                        registros_match += 1
+                    else:
+                        registro.estado = 'no_match'
+                        registro.error_mensaje = "No encontrado en padrón"
+                        
+                except Exception as e:
+                    registro.estado = 'error'
+                    registro.error_mensaje = str(e)
+                    errores.append(f"Registro {registro.id}: {str(e)}")
             
             self.db.commit()
-            return True, registros_match, []
+            return True, registros_match, errores
             
         except Exception as e:
             self.db.rollback()
-            return False, 0, [f"Error en match con padrón: {str(e)}"]
+            return False, 0, [f"Error en match: {str(e)}"]
     
     def obtener_estadisticas_sesion(self, sesion_id: str) -> Dict:
         """Obtiene estadísticas de una sesión de procesamiento"""

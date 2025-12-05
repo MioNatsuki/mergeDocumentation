@@ -755,7 +755,7 @@ class AsistenteDiseno(QWidget):
                 campos_json=configuracion,
                 activa=self.check_activa.isChecked(),
                 usuario_creador=self.usuario.id,
-                id_deleted=False
+                is_deleted=False
             )
             
             db.add(plantilla)

@@ -3,7 +3,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                              QPushButton, QScrollArea, QGridLayout, 
                              QMessageBox, QFrame, QComboBox, QLineEdit,
                              QToolButton, QMenu, QInputDialog)
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 from PyQt6.QtGui import QFont, QAction, QColor
 from config.database import SessionLocal
 from core.models import Proyecto, Plantilla
@@ -491,58 +491,75 @@ class DashboardPlantillasMejorado(QWidget):
             self.lbl_contador.setText(f"🔍 {filtradas} de {total} plantillas")
     
     def crear_nueva_plantilla(self):
-        """Abre el editor visual para nueva plantilla"""
-        if self.stacked_widget:
-            try:
-                # Primero pedir el PDF
-                from PyQt6.QtWidgets import QFileDialog
-                
-                pdf_path, _ = QFileDialog.getOpenFileName(
-                    self, 
-                    "Seleccionar PDF Base", 
-                    "", 
-                    "Archivos PDF (*.pdf);;Todos los archivos (*)"
-                )
-                
-                if not pdf_path:
-                    return
-                
-                # Verificar que el archivo existe
-                import os
-                if not os.path.exists(pdf_path):
-                    QMessageBox.warning(self, "Error", "El archivo PDF no existe")
-                    return
-                
-                # IMPORTANTE: Importar desde el módulo correcto
-                from ui.modules.plantillas.editor_mejorado.editor_visual import EditorVisual
-                
-                # Crear el editor con el PDF
-                editor = EditorVisual(self.usuario, self.proyecto_id, pdf_path, self.stacked_widget)
-                editor.plantilla_guardada.connect(self.on_plantilla_guardada)
-                
-                # Agregar al stacked widget
-                self.stacked_widget.addWidget(editor)
-                self.stacked_widget.setCurrentWidget(editor)
-                
-                print(f"✅ Editor abierto con PDF: {pdf_path}")
-                
-            except ImportError as e:
-                print(f"❌ Error de importación: {e}")
-                QMessageBox.critical(
-                    self, 
-                    "Error de importación", 
-                    f"No se pudo cargar el editor visual:\n\n{str(e)}\n\n"
-                    f"Asegúrate de que:\n"
-                    f"1. PyQt6 esté instalado: pip install PyQt6\n"
-                    f"2. PyMuPDF esté instalado: pip install PyMuPDF\n"
-                    f"3. Pillow esté instalado: pip install Pillow"
-                )
-            except Exception as e:
-                print(f"❌ Error: {e}")
-                import traceback
-                traceback.print_exc()
-                QMessageBox.critical(self, "Error", f"No se pudo abrir el editor:\n{str(e)}")
+        """Abre editor para nueva plantilla"""
+        from PyQt6.QtWidgets import QFileDialog
+        
+        pdf_path, _ = QFileDialog.getOpenFileName(
+            self, 
+            "Seleccionar PDF Base", 
+            "", 
+            "Archivos PDF (*.pdf)"
+        )
+        
+        if not pdf_path:
+            return
+        
+        # IMPORTANTE: Resetear plantilla_a_editar
+        if hasattr(self, 'plantilla_a_editar'):
+            delattr(self, 'plantilla_a_editar')
+        
+        self.abrir_editor_con_pdf(pdf_path)
     
+    def editar_plantilla(self, plantilla_id):
+        """Abre editor para editar plantilla existente"""
+        from config.database import SessionLocal
+        from core.models import Plantilla
+        
+        db = SessionLocal()
+        try:
+            plantilla = db.query(Plantilla).filter(Plantilla.id == plantilla_id).first()
+            if plantilla and plantilla.campos_json:
+                # Guardar datos de la plantilla para editar
+                self.plantilla_a_editar = plantilla.campos_json
+                self.plantilla_a_editar["nombre"] = plantilla.nombre
+                self.plantilla_a_editar["id"] = plantilla.id
+                
+                # Abrir editor con el PDF de la plantilla
+                if plantilla.ruta_archivo and os.path.exists(plantilla.ruta_archivo):
+                    self.abrir_editor_con_pdf(plantilla.ruta_archivo, self.plantilla_a_editar)
+                else:
+                    QMessageBox.warning(self, "Error", 
+                                    f"El archivo PDF no existe: {plantilla.ruta_archivo}")
+            else:
+                QMessageBox.warning(self, "Error", "Plantilla no encontrada o sin campos")
+        finally:
+            db.close()
+
+    def abrir_editor_con_pdf(self, pdf_path, plantilla_existente=None):
+        """Abre el editor con un PDF específico"""
+        try:
+            from ui.modules.plantillas.editor_mejorado.editor_visual import EditorVisual
+            
+            editor = EditorVisual(
+                self.usuario, 
+                self.proyecto_id, 
+                pdf_path,
+                self.stacked_widget
+            )
+            
+            # Si hay plantilla existente, cargarla
+            if plantilla_existente:
+                editor.plantilla_existente = plantilla_existente
+                QTimer.singleShot(500, editor.cargar_plantilla_existente)
+            
+            editor.plantilla_guardada.connect(self.on_plantilla_guardada)
+            
+            self.stacked_widget.addWidget(editor)
+            self.stacked_widget.setCurrentWidget(editor)
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"No se pudo abrir el editor: {str(e)}")
+
     def on_plantilla_guardada(self, configuracion):
         """Cuando se guarda una plantilla desde el editor"""
         if not configuracion:
@@ -578,7 +595,7 @@ class DashboardPlantillasMejorado(QWidget):
                 campos_json=configuracion,
                 activa=True,
                 usuario_creador=self.usuario.id,
-                id_deleted=False
+                is_deleted=False
             )
             
             db.add(plantilla)

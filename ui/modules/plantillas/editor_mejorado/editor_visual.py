@@ -29,7 +29,7 @@ except ImportError:
 
 # ================== CLASE CAMPO DE TEXTO MEJORADA ==================
 class CampoTextoWidget(QFrame):
-    """Widget de campo de texto arrastrable y redimensionable - CON DATOS DE BD"""
+    """Widget de campo de texto SIN fondo, SIN placeholder"""
     
     campo_modificado = pyqtSignal(dict)
     campo_seleccionado = pyqtSignal(object)
@@ -39,88 +39,79 @@ class CampoTextoWidget(QFrame):
         super().__init__(parent)
         self.nombre = nombre
         self.tipo = tipo
+        self.columna_padron = ""  # ← NUEVO: Cada campo tendrá su propia columna
+        
         self.config = {
             "nombre": nombre,
             "tipo": tipo,
-            "texto": nombre,
+            "columna_padron": "",  # ← INICIALIZAR VACÍO
             "fuente": "Arial",
             "tamano": 12,
             "color": "#000000",
             "negrita": False,
             "cursiva": False,
             "alineacion": "left",
-            "formato": "texto",
-            "columna_padron": "",  # ← ESTO ES LO IMPORTANTE
             "x": 50,
             "y": 50,
             "ancho": 100,
             "alto": 30,
             "margen": 2,
-            "borde": True
+            "borde": False  # ← SIN BORDE POR DEFECTO
         }
         
         self.seleccionado = False
         self.drag_pos = None
         self.redimensionando = False
         self.resize_corner = None
-        self.resize_handles = []
-        self.valor_preview = None  # ← Valor para previsualización
         
         self.setup_ui()
         self.actualizar_estilo()
-        
+    
     def setup_ui(self):
-        """Configura la interfaz del campo"""
-        self.setFrameStyle(QFrame.Shape.Box)
+        """Configura SIN fondo, SIN borde"""
+        self.setFrameStyle(QFrame.Shape.NoFrame)  # ← SIN BORDE
         self.setCursor(Qt.CursorShape.SizeAllCursor)
         
         layout = QVBoxLayout()
-        layout.setContentsMargins(2, 2, 2, 2)
+        layout.setContentsMargins(0, 0, 0, 0)  # ← SIN MÁRGENES
         
-        self.label = QLabel(self.config["texto"])
+        self.label = QLabel()
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.label.setWordWrap(True)  # ← Permitir múltiples líneas
+        self.actualizar_texto()  # ← NUEVO MÉTODO
         layout.addWidget(self.label)
         
         self.setLayout(layout)
         self.setFixedSize(self.config["ancho"], self.config["alto"])
     
-    def set_valor_preview(self, valor):
-        """Establece el valor de previsualización desde BD"""
-        self.valor_preview = valor
-        self.actualizar_texto()
-    
     def actualizar_texto(self):
-        """Actualiza el texto mostrado según modo preview o edición"""
-        if self.valor_preview is not None:
-            # Modo preview: mostrar dato real
-            self.label.setText(str(self.valor_preview))
+        """Muestra solo la columna asignada, NO placeholder"""
+        if self.columna_padron:
+            self.label.setText(f"[{self.columna_padron}]")
         else:
-            # Modo edición: mostrar placeholder
-            if self.config.get("columna_padron"):
-                self.label.setText(f"«{self.config['columna_padron']}»")
-            else:
-                self.label.setText(self.config["texto"])
+            self.label.setText(f"[{self.nombre}]")
+    
+    def set_columna_padron(self, columna: str):
+        """Asigna una columna específica a ESTE campo"""
+        self.columna_padron = columna
+        self.config["columna_padron"] = columna
+        self.actualizar_texto()
+        self.actualizar_estilo()
     
     def mousePressEvent(self, event):
-        """Maneja clic en el campo con mejor detección de redimensionamiento"""
+        """Maneja clic para selección y arrastre"""
         if event.button() == Qt.MouseButton.LeftButton:
             pos = event.pos()
-            
-            # Definir áreas de redimensionamiento (esquinas de 8x8px)
             rect = self.rect()
+            
+            # Areas de redimensionamiento
             handles = {
                 "top-left": QRect(0, 0, 8, 8),
                 "top-right": QRect(rect.width() - 8, 0, 8, 8),
                 "bottom-left": QRect(0, rect.height() - 8, 8, 8),
                 "bottom-right": QRect(rect.width() - 8, rect.height() - 8, 8, 8),
-                "top": QRect(rect.width()//2 - 4, 0, 8, 8),
-                "bottom": QRect(rect.width()//2 - 4, rect.height() - 8, 8, 8),
-                "left": QRect(0, rect.height()//2 - 4, 8, 8),
-                "right": QRect(rect.width() - 8, rect.height()//2 - 4, 8, 8)
             }
             
-            # Verificar si el clic fue en un handle
+            # Verificar si es redimensionamiento
             for corner_name, handle_rect in handles.items():
                 if handle_rect.contains(pos):
                     self.redimensionando = True
@@ -130,13 +121,12 @@ class CampoTextoWidget(QFrame):
                     self.resize_start_pos_widget = self.pos()
                     return
             
-            # Si no es redimensionar, es arrastre
+            # Si no, es arrastre normal
             self.drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
             self.campo_seleccionado.emit(self)
             event.accept()
-            
+    
     def mouseMoveEvent(self, event):
-        """Maneja movimiento del mouse para arrastre y redimensionamiento"""
         if event.buttons() & Qt.MouseButton.LeftButton:
             if self.redimensionando and self.resize_corner:
                 # Redimensionar
@@ -147,7 +137,6 @@ class CampoTextoWidget(QFrame):
                 new_x = self.x()
                 new_y = self.y()
                 
-                # Lógica de redimensionamiento según la esquina
                 if "right" in self.resize_corner:
                     new_width = max(30, self.resize_start_size.width() + delta.x())
                 elif "left" in self.resize_corner:
@@ -162,11 +151,9 @@ class CampoTextoWidget(QFrame):
                     if new_height > 20:
                         new_y = self.resize_start_pos_widget.y() + delta.y()
                 
-                # Aplicar cambios
                 self.move(new_x, new_y)
                 self.setFixedSize(new_width, new_height)
                 
-                # Actualizar configuración
                 self.config["x"] = new_x
                 self.config["y"] = new_y
                 self.config["ancho"] = new_width
@@ -184,97 +171,41 @@ class CampoTextoWidget(QFrame):
                 new_pos = event.globalPosition().toPoint() - self.drag_pos
                 self.move(new_pos)
                 
-                # Actualizar posición
                 self.config["x"] = new_pos.x()
                 self.config["y"] = new_pos.y()
                 self.campo_modificado.emit({"x": new_pos.x(), "y": new_pos.y()})
     
     def mouseReleaseEvent(self, event):
-        """Maneja liberación del mouse"""
         self.redimensionando = False
         self.drag_pos = None
         self.resize_corner = None
     
     def paintEvent(self, event):
-        """Dibuja bordes y handles de redimensionamiento cuando está seleccionado"""
+        """Dibuja solo cuando está seleccionado"""
         super().paintEvent(event)
         
         if self.seleccionado:
             painter = QPainter(self)
-            painter.setPen(QPen(QColor(255, 0, 0), 2, Qt.PenStyle.DashLine))
-            
-            # Dibujar borde rojo discontinuo
-            painter.drawRect(1, 1, self.width()-2, self.height()-2)
-            
-            # Dibujar handles de redimensionamiento (puntos negros)
-            painter.setPen(QPen(QColor(0, 0, 0), 1))
-            painter.setBrush(QBrush(QColor(0, 0, 0)))
-            
-            # Esquinas y bordes
-            handle_size = 6
-            rect = self.rect()
-            
-            handles = [
-                (0, 0),  # Superior izquierda
-                (rect.width() - handle_size, 0),  # Superior derecha
-                (0, rect.height() - handle_size),  # Inferior izquierda
-                (rect.width() - handle_size, rect.height() - handle_size),  # Inferior derecha
-                (rect.width()//2 - handle_size//2, 0),  # Centro superior
-                (rect.width()//2 - handle_size//2, rect.height() - handle_size),  # Centro inferior
-                (0, rect.height()//2 - handle_size//2),  # Centro izquierdo
-                (rect.width() - handle_size, rect.height()//2 - handle_size//2)  # Centro derecho
-            ]
-            
-            for x, y in handles:
-                painter.drawRect(x, y, handle_size, handle_size)
+            painter.setPen(QPen(QColor(255, 0, 0), 1, Qt.PenStyle.DashLine))
+            painter.drawRect(0, 0, self.width()-1, self.height()-1)
     
     def mouseDoubleClickEvent(self, event):
-        """Doble clic para editar texto placeholder"""
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.editar_texto()
+        """NO hacer nada - eliminamos edición de placeholder"""
+        pass
     
     def contextMenuEvent(self, event):
-        """Menú contextual con opciones MEJORADO"""
+        """Menú contextual SIMPLIFICADO - solo eliminar"""
         menu = QMenu(self)
         
-        action_editar = QAction("✏️ Editar placeholder", self)
-        action_editar.triggered.connect(self.editar_texto)
-        
-        action_fuente = QAction("🔤 Cambiar fuente", self)
-        action_fuente.triggered.connect(self.cambiar_fuente)
-        
-        action_color = QAction("🎨 Cambiar color", self)
-        action_color.triggered.connect(self.cambiar_color)
-        
-        # NUEVA OPCIÓN: Eliminar campo
         action_eliminar = QAction("🗑️ Eliminar campo", self)
         action_eliminar.triggered.connect(self.eliminar_campo)
         
-        menu.addAction(action_editar)
-        menu.addAction(action_fuente)
-        menu.addAction(action_color)
-        menu.addSeparator()
         menu.addAction(action_eliminar)
-        
-        # Usar globalPos() en lugar de globalPosition()
         menu.exec(event.globalPos())
     
     def eliminar_campo(self):
-        """Solicita eliminación del campo"""
+        """Emitir señal para eliminar este campo"""
         self.solicita_eliminar.emit(self)
-    
-    def editar_texto(self):
-        """Diálogo para editar texto placeholder"""
-        texto, ok = QInputDialog.getText(
-            self, "Editar placeholder",
-            "Texto placeholder (cuando no hay columna asignada):",
-            text=self.config["texto"]
-        )
-        
-        if ok and texto:
-            self.config["texto"] = texto
-            self.actualizar_texto()
-            self.campo_modificado.emit({"texto": texto})
     
     def cambiar_fuente(self):
         """Diálogo para cambiar fuente"""
@@ -302,31 +233,38 @@ class CampoTextoWidget(QFrame):
             self.campo_modificado.emit({"color": color.name()})
     
     def actualizar_estilo(self):
-        """Actualiza el estilo visual del campo"""
+        """Estilo SIN fondo, solo texto"""
         if self.seleccionado:
-            borde = "1px solid #ff0000"
+            borde = "1px dashed #ff0000"
         else:
-            borde = "1px solid #cccccc"
+            borde = "none"
+        
+        # Color del texto según si tiene columna asignada
+        if self.columna_padron:
+            color_texto = "#0066cc"  # Azul cuando tiene columna
+        else:
+            color_texto = "#666666"  # Gris cuando no tiene
         
         estilo = f"""
             CampoTextoWidget {{
                 background-color: transparent;
                 border: {borde};
-                border-radius: 2px;
-                padding: 2px;
+                padding: 0px;
             }}
             QLabel {{
-                color: {self.config['color']};
+                background-color: transparent;
+                color: {color_texto};
                 font-family: '{self.config['fuente']}';
                 font-size: {self.config['tamano']}pt;
                 font-weight: {'bold' if self.config['negrita'] else 'normal'};
                 font-style: {'italic' if self.config['cursiva'] else 'normal'};
+                padding: 2px;
             }}
         """
         self.setStyleSheet(estilo)
     
     def set_seleccionado(self, seleccionado: bool):
-        """Marca/desmarca el campo como seleccionado"""
+        """Marca/desmarca como seleccionado"""
         self.seleccionado = seleccionado
         self.actualizar_estilo()
         self.update()
@@ -714,6 +652,7 @@ class PanelPropiedades(QFrame):
         self.columnas_padron = []
         self.setup_ui()
         self.cargar_columnas_reales()
+        self.hide()  # ← OCULTAR por defecto
     
     def setup_ui(self):
         self.setFrameStyle(QFrame.Shape.StyledPanel)
@@ -728,28 +667,24 @@ class PanelPropiedades(QFrame):
         widget_contenido = QWidget()
         contenido_layout = QVBoxLayout()
         
+        # Nombre interno
+        contenido_layout.addWidget(QLabel("Nombre interno:"))
         self.txt_nombre = QLineEdit()
-        self.txt_nombre.setPlaceholderText("Nombre del campo...")
-        self.txt_nombre.textChanged.connect(self.emitir_cambios)
-        contenido_layout.addWidget(QLabel("Nombre:"))
+        self.txt_nombre.setPlaceholderText("Nombre para identificar el campo...")
+        self.txt_nombre.textChanged.connect(self.actualizar_cambios)  # ← CAMBIÉ el nombre
         contenido_layout.addWidget(self.txt_nombre)
         
-        self.txt_texto = QLineEdit()
-        self.txt_texto.setPlaceholderText("Texto placeholder...")
-        self.txt_texto.textChanged.connect(self.emitir_cambios)
-        contenido_layout.addWidget(QLabel("Placeholder:"))
-        contenido_layout.addWidget(self.txt_texto)
-        
-        # ← COLUMNAS REALES DEL PADRÓN
-        self.combo_columna = QComboBox()
-        self.combo_columna.currentTextChanged.connect(self.emitir_cambios)
+        # Columna del padrón
         contenido_layout.addWidget(QLabel("📊 Columna del Padrón:"))
+        self.combo_columna = QComboBox()
+        self.combo_columna.currentTextChanged.connect(self.actualizar_cambios)  # ← CAMBIÉ el nombre
         contenido_layout.addWidget(self.combo_columna)
         
         self.lbl_info_columna = QLabel("")
         self.lbl_info_columna.setStyleSheet("color: #666; font-size: 10px;")
         contenido_layout.addWidget(self.lbl_info_columna)
         
+        # Botones de estilo (mantenemos por ahora)
         layout_botones = QHBoxLayout()
         self.btn_fuente = QPushButton("🔤 Fuente")
         self.btn_fuente.clicked.connect(self.cambiar_fuente)
@@ -760,9 +695,9 @@ class PanelPropiedades(QFrame):
         contenido_layout.addLayout(layout_botones)
         
         self.check_negrita = QCheckBox("Negrita")
-        self.check_negrita.stateChanged.connect(self.emitir_cambios)
+        self.check_negrita.stateChanged.connect(self.actualizar_cambios)  # ← CAMBIÉ el nombre
         self.check_cursiva = QCheckBox("Cursiva")
-        self.check_cursiva.stateChanged.connect(self.emitir_cambios)
+        self.check_cursiva.stateChanged.connect(self.actualizar_cambios)  # ← CAMBIÉ el nombre
         contenido_layout.addWidget(self.check_negrita)
         contenido_layout.addWidget(self.check_cursiva)
         
@@ -772,41 +707,50 @@ class PanelPropiedades(QFrame):
         self.setLayout(layout)
     
     def cargar_columnas_reales(self):
+        """Carga columnas del padrón"""
         from config.database import SessionLocal
         from core.models import Proyecto
         from core.padron_service import PadronService
+        
         db = SessionLocal()
         try:
             proyecto = db.query(Proyecto).filter(Proyecto.id == self.proyecto_id).first()
             if not proyecto or not proyecto.tabla_padron:
                 return
+            
             padron_service = PadronService(db)
             self.columnas_padron = padron_service.obtener_columnas_padron(proyecto.tabla_padron)
+            
             self.combo_columna.clear()
-            self.combo_columna.addItem("-- Sin columna asignada --", None)
+            self.combo_columna.addItem("-- Sin columna asignada --", "")
+            
             for columna in self.columnas_padron:
                 nombre = columna["nombre"]
                 tipo = columna["tipo"]
                 self.combo_columna.addItem(f"{nombre} ({tipo})", nombre)
+                
         except Exception as e:
             print(f"ERROR cargando columnas: {e}")
-            traceback.print_exc()
         finally:
             db.close()
     
     def cambiar_fuente(self):
-        if self.campo_actual:
+        """Diálogo para cambiar fuente"""
+        if self.campo_actual and hasattr(self.campo_actual, 'cambiar_fuente'):
             self.campo_actual.cambiar_fuente()
+            self.actualizar_cambios()
     
     def cambiar_color(self):
-        if self.campo_actual:
+        """Diálogo para cambiar color"""
+        if self.campo_actual and hasattr(self.campo_actual, 'cambiar_color'):
             self.campo_actual.cambiar_color()
+            self.actualizar_cambios()
     
-    def emitir_cambios(self):
+    def actualizar_cambios(self):  # ← NUEVO MÉTODO CON NOMBRE CORRECTO
+        """Emitir cambios cuando se modifica algo"""
         if self.campo_actual:
             props = {
                 "nombre": self.txt_nombre.text(),
-                "texto": self.txt_texto.text(),
                 "columna_padron": self.combo_columna.currentData(),
                 "negrita": self.check_negrita.isChecked(),
                 "cursiva": self.check_cursiva.isChecked()
@@ -814,38 +758,41 @@ class PanelPropiedades(QFrame):
             self.propiedades_cambiadas.emit(props)
     
     def mostrar_campo(self, campo):
+        """Muestra u oculta el panel según si hay campo seleccionado"""
         self.campo_actual = campo
+        
         if campo:
+            self.show()  # ← MOSTRAR cuando hay campo
+            
             self.txt_nombre.setText(campo.nombre)
-            self.txt_texto.setText(campo.config.get("texto", ""))
-            if campo.tipo == "tabla":
-                self.txt_texto.setEnabled(False)
-                self.combo_columna.setEnabled(False)
-                self.lbl_info_columna.setText("Para tablas, configurar desde menú contextual")
-            else:
-                self.txt_texto.setEnabled(True)
-                self.combo_columna.setEnabled(True)
-                columna = campo.config.get("columna_padron", "")
-                index = self.combo_columna.findData(columna)
-                self.combo_columna.setCurrentIndex(max(0, index))
-                if columna:
-                    for col in self.columnas_padron:
-                        if col["nombre"] == columna:
-                            tipo = col.get("tipo", "texto")
-                            nullable = "NULL" if col.get("nullable") else "NOT NULL"
-                            self.lbl_info_columna.setText(f"Tipo: {tipo} | {nullable}")
-                            break
-                    else:
-                        self.lbl_info_columna.setText("")
+            
+            # Configurar combo
+            columna = campo.config.get("columna_padron", "")
+            index = self.combo_columna.findData(columna)
+            self.combo_columna.setCurrentIndex(max(0, index))
+            
+            # Actualizar info de columna
+            if columna:
+                for col in self.columnas_padron:
+                    if col["nombre"] == columna:
+                        tipo = col.get("tipo", "texto")
+                        nullable = "NULL" if col.get("nullable") else "NOT NULL"
+                        self.lbl_info_columna.setText(f"Tipo: {tipo} | {nullable}")
+                        break
                 else:
                     self.lbl_info_columna.setText("")
+            else:
+                self.lbl_info_columna.setText("")
+            
+            # Configurar checks
             self.check_negrita.setChecked(campo.config.get("negrita", False))
             self.check_cursiva.setChecked(campo.config.get("cursiva", False))
+            
             self.lbl_titulo.setText(f"⚙️ {campo.nombre} ({campo.tipo})")
         else:
+            self.hide()  # ← OCULTAR cuando no hay campo
             self.lbl_titulo.setText("⚙️ Propiedades del Campo")
             self.txt_nombre.setText("")
-            self.txt_texto.setText("")
             self.combo_columna.setCurrentIndex(0)
             self.check_negrita.setChecked(False)
             self.check_cursiva.setChecked(False)
@@ -853,10 +800,9 @@ class PanelPropiedades(QFrame):
 
 # ================== DIÁLOGO DE PREVISUALIZACIÓN ==================
 class DialogoPreview(QDialog):
-    """Diálogo para previsualizar plantilla con datos reales"""
-    
-    def __init__(self, proyecto_id, pdf_path, campos, parent=None):
-        super().__init__(parent)
+
+    def __init__(self, proyecto_id, pdf_path, campos, parent=None):  # ← YA ESTÁ BIEN
+        super().__init__(parent)  # ← parent va al final
         self.proyecto_id = proyecto_id
         self.pdf_path = pdf_path
         self.campos = campos
@@ -864,122 +810,44 @@ class DialogoPreview(QDialog):
         self.registros = []
         self.indice_actual = 0
         self.setup_ui()
-        self.cargar_registros()
-    
-    def setup_ui(self):
-        self.setWindowTitle("👁️ Previsualización de Plantilla")
-        self.resize(900, 700)
-        layout = QVBoxLayout()
-        
-        # Barra superior
-        toolbar = QFrame()
-        toolbar.setStyleSheet("background-color: #3498db; padding: 10px;")
-        toolbar_layout = QHBoxLayout()
-        lbl_titulo = QLabel("👁️ Vista Previa con Datos Reales")
-        lbl_titulo.setStyleSheet("color: white; font-size: 14px; font-weight: bold;")
-        self.btn_anterior = QPushButton("◀ Anterior")
-        self.btn_anterior.clicked.connect(self.registro_anterior)
-        self.btn_siguiente = QPushButton("Siguiente ▶")
-        self.btn_siguiente.clicked.connect(self.registro_siguiente)
-        self.lbl_contador = QLabel("Registro: 0 / 0")
-        self.lbl_contador.setStyleSheet("color: white;")
-        btn_cerrar = QPushButton("✖ Cerrar")
-        btn_cerrar.clicked.connect(self.close)
-        toolbar_layout.addWidget(lbl_titulo)
-        toolbar_layout.addStretch()
-        toolbar_layout.addWidget(self.btn_anterior)
-        toolbar_layout.addWidget(self.lbl_contador)
-        toolbar_layout.addWidget(self.btn_siguiente)
-        toolbar_layout.addWidget(btn_cerrar)
-        toolbar.setLayout(toolbar_layout)
-        layout.addWidget(toolbar)
-        
-        # Área de previsualización
-        self.preview = PreviewPDF()
-        self.preview.cambiar_modo("seleccion")  # Solo lectura
-        self.preview.btn_texto.setEnabled(False)
-        self.preview.btn_tabla.setEnabled(False)
-        layout.addWidget(self.preview)
-        
-        self.setLayout(layout)
-    
+        self.cargar_registros()  # ← Esto falla porque el método no existe en PadronService
+
     def cargar_registros(self):
-        """Carga registros del padrón"""
+        """Carga registros del padrón - CORREGIDO"""
         from config.database import SessionLocal
         from core.models import Proyecto
         from core.padron_service import PadronService
+        
         db = SessionLocal()
         try:
+            # 1. Obtener el proyecto
             proyecto = db.query(Proyecto).filter(Proyecto.id == self.proyecto_id).first()
             if not proyecto or not proyecto.tabla_padron:
-                QMessageBox.warning(self, "Error", "No hay padrón configurado")
+                QMessageBox.warning(self, "Error", "No hay padrón configurado para este proyecto")
                 return
+            
+            # 2. Obtener el UUID del padrón
+            uuid_padron = proyecto.tabla_padron
+            
+            # 3. Usar PadronService para obtener registros
             padron_service = PadronService(db)
-            self.registros = padron_service.obtener_todos_registros(proyecto.tabla_padron)
+            
+            # Obtener algunos registros de ejemplo (máximo 10 para preview)
+            self.registros = padron_service.obtener_datos_ejemplo_real(uuid_padron, limit=10)
+            
             if self.registros:
                 self.indice_actual = 0
                 self.mostrar_registro_actual()
             else:
-                QMessageBox.information(self, "Sin datos", "No hay registros en el padrón")
+                QMessageBox.information(self, "Sin datos", 
+                                    "No hay registros en el padrón para mostrar")
+                    
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error cargando datos: {e}")
-            traceback.print_exc()
+            error_msg = f"Error cargando datos: {str(e)}"
+            print(f"DEBUG - {error_msg}")
+            QMessageBox.critical(self, "Error", error_msg)
         finally:
             db.close()
-    
-    def mostrar_registro_actual(self):
-        """Muestra el registro actual en los campos"""
-        if not self.registros:
-            return
-        self.registro_actual = self.registros[self.indice_actual]
-        self.lbl_contador.setText(f"Registro: {self.indice_actual + 1} / {len(self.registros)}")
-        
-        # Cargar PDF si no está cargado
-        if not self.preview.imagen_pdf:
-            self.preview.cargar_pdf(self.pdf_path)
-            QTimer.singleShot(200, self.aplicar_datos_a_campos)
-        else:
-            self.aplicar_datos_a_campos()
-    
-    def aplicar_datos_a_campos(self):
-        """Aplica los datos del registro a los campos"""
-        for campo_config in self.campos:
-            # Crear widget temporal para preview
-            if campo_config["tipo"] == "texto":
-                campo = CampoTextoWidget(campo_config["nombre"], "texto", self.preview.lbl_imagen)
-                campo.config = campo_config.copy()
-                
-                # Obtener valor de la columna si está asignada
-                columna = campo_config.get("columna_padron")
-                if columna and self.registro_actual:
-                    valor = self.registro_actual.get(columna, "")
-                    campo.set_valor_preview(valor)
-                else:
-                    campo.actualizar_texto()
-                
-                # Posicionar campo
-                x_mm = campo_config["x"]
-                y_mm = campo_config["y"]
-                self.preview.agregar_campo_visual(campo, x_mm, y_mm)
-                campo.setEnabled(False)  # Solo lectura
-    
-    def registro_anterior(self):
-        if self.indice_actual > 0:
-            self.limpiar_campos()
-            self.indice_actual -= 1
-            self.mostrar_registro_actual()
-    
-    def registro_siguiente(self):
-        if self.indice_actual < len(self.registros) - 1:
-            self.limpiar_campos()
-            self.indice_actual += 1
-            self.mostrar_registro_actual()
-    
-    def limpiar_campos(self):
-        """Limpia campos actuales"""
-        for campo in self.preview.campos:
-            campo.deleteLater()
-        self.preview.campos.clear()
 
 # ================== EDITOR VISUAL MEJORADO ==================
 class EditorVisual(QWidget):
@@ -1110,21 +978,83 @@ class EditorVisual(QWidget):
     
     def on_campo_modificado(self, cambios):
         pass
+
+    def cargar_plantilla_existente(self):
+        """Carga una plantilla existente para edición"""
+        if not hasattr(self, 'plantilla_existente') or not self.plantilla_existente:
+            return
+        
+        # Cargar campos existentes
+        campos_config = self.plantilla_existente.get("campos", [])
+        
+        for config in campos_config:
+            # Crear campo desde configuración
+            campo = CampoTextoWidget(
+                config.get("nombre", "Campo"), 
+                "texto", 
+                self.preview_pdf.lbl_imagen
+            )
+            
+            # Aplicar configuración
+            campo.config = config.copy()
+            campo.nombre = config.get("nombre", "Campo")
+            
+            # Asignar columna del padrón si existe
+            if "columna_padron" in config:
+                campo.set_columna_padron(config["columna_padron"])
+            
+            # Conectar señales
+            campo.campo_seleccionado.connect(self.seleccionar_campo)
+            campo.campo_modificado.connect(self.on_campo_modificado)
+            campo.solicita_eliminar.connect(self.eliminar_campo)
+            
+            # Posicionar (convertir mm a píxeles si es necesario)
+            if hasattr(self.preview_pdf, 'escala'):
+                x_px = int(config.get("x", 50) * self.preview_pdf.escala)
+                y_px = int(config.get("y", 50) * self.preview_pdf.escala)
+                ancho_px = int(config.get("ancho", 100) * self.preview_pdf.escala)
+                alto_px = int(config.get("alto", 30) * self.preview_pdf.escala)
+            else:
+                x_px = config.get("x", 50)
+                y_px = config.get("y", 50)
+                ancho_px = config.get("ancho", 100)
+                alto_px = config.get("alto", 30)
+            
+            campo.move(x_px, y_px)
+            campo.setFixedSize(ancho_px, alto_px)
+            campo.show()
+            
+            # Agregar a lista
+            self.campos.append(campo)
+        
+        QMessageBox.information(self, "Cargado", 
+                            f"Plantilla cargada con {len(campos_config)} campos")
     
     def on_propiedades_cambiadas(self, propiedades):
+        """Actualiza propiedades cuando cambian en el panel"""
         campo = self.panel_propiedades.campo_actual
-        if campo:
-            for key, value in propiedades.items():
-                campo.config[key] = value
-            if "texto" in propiedades:
-                campo.config["texto"] = propiedades["texto"]
-            if "nombre" in propiedades:
-                campo.nombre = propiedades["nombre"]
-                campo.config["nombre"] = propiedades["nombre"]
-            if "columna_padron" in propiedades:
-                campo.config["columna_padron"] = propiedades["columna_padron"]
-                campo.actualizar_texto()  # ← Actualizar vista
-            campo.update()
+        if not campo:
+            return
+        
+        # Actualizar configuración básica
+        for key, value in propiedades.items():
+            campo.config[key] = value
+        
+        # Actualizar nombre
+        if "nombre" in propiedades:
+            campo.nombre = propiedades["nombre"]
+        
+        # Actualizar columna del padrón - SOLO para CampoTextoWidget
+        if "columna_padron" in propiedades:
+            campo.config["columna_padron"] = propiedades["columna_padron"]
+            
+            # Si el campo tiene método set_columna_padron, usarlo
+            if hasattr(campo, 'set_columna_padron'):
+                campo.set_columna_padron(propiedades["columna_padron"])
+        
+        # Actualizar estilo visual
+        if hasattr(campo, 'actualizar_estilo'):
+            campo.actualizar_estilo()
     
     # ← NUEVA FUNCIÓN DE PREVISUALIZACIÓN
     def mostrar_preview(self):

@@ -1,19 +1,19 @@
+# ui/modules/plantillas/dashboard_mejorado.py - VERSIÓN CORREGIDA
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                              QPushButton, QScrollArea, QGridLayout, 
-                             QMessageBox, QFrame)
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QFont
+                             QMessageBox, QFrame, QComboBox, QLineEdit,
+                             QToolButton, QMenu, QInputDialog)
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer
+from PyQt6.QtGui import QFont, QAction, QColor
 from config.database import SessionLocal
 from core.models import Proyecto, Plantilla
-from core.project_service import ProjectService
+import os
 
-from ui.modules.plantillas.formulario_plantilla import FormularioPlantilla
-from ui.modules.procesamiento.cargador_csv import CargadorCSV
-from ui.modules.generador_pdf.emisor_documentos import EmisorDocumentos
-
-class DashboardPlantillas(QWidget):
-    """Dashboard de plantillas para un proyecto específico"""
-    volver_proyectos = pyqtSignal()
+class DashboardPlantillasMejorado(QWidget):
+    """Dashboard moderno de plantillas con filtros y vista mejorada"""
+    
+    plantilla_seleccionada = pyqtSignal(int, str)  # id, accion (editar|usar|ver)
+    volver_a_proyectos = pyqtSignal()  # ← ¡SEÑAL AÑADIDA!
     
     def __init__(self, usuario, proyecto_id, stacked_widget=None):
         super().__init__()
@@ -21,278 +21,234 @@ class DashboardPlantillas(QWidget):
         self.proyecto_id = proyecto_id
         self.proyecto = None
         self.plantillas = []
+        self.plantillas_filtradas = []
         self.stacked_widget = stacked_widget
         self.setup_ui()
-        self.cargar_datos_proyecto()
-        self.cargar_plantillas()
+        self.cargar_datos()
     
     def setup_ui(self):
         layout = QVBoxLayout()
-        layout.setSpacing(20)
+        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
         
-        # Header con navegación
-        header_layout = QHBoxLayout()
-        
-        btn_volver = QPushButton("← Volver a Proyectos")
-        btn_volver.clicked.connect(self.volver_proyectos.emit)
-        btn_volver.setStyleSheet("""
-            QPushButton {
-                background-color: #6c757d;
-                color: white;
-                border: none;
-                padding: 8px 16px;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #5a6268;
+        # HEADER CON ACCIONES
+        header = QFrame()
+        header.setStyleSheet("""
+            QFrame {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #4CAF50, stop:1 #2196F3);
+                border-radius: 10px;
+                padding: 15px;
             }
         """)
-        header_layout.addWidget(btn_volver)
         
-        header_layout.addStretch()
-
-        # Botón cargar CSV (todos los roles)
-        btn_cargar_csv = QPushButton("📁 Cargar CSV")
-        btn_cargar_csv.clicked.connect(self.cargar_csv)
-        btn_cargar_csv.setStyleSheet("""
+        header_layout = QVBoxLayout()
+        
+        # Título y acciones rápidas
+        top_bar = QHBoxLayout()
+        
+        # Botón volver
+        btn_volver = QPushButton("← Volver a Proyectos")
+        btn_volver.clicked.connect(self.volver_proyectos)  # ← CONECTAR AL MÉTODO
+        btn_volver.setStyleSheet("""
             QPushButton {
-                background-color: #17a2b8;
+                background-color: rgba(255,255,255,0.2);
                 color: white;
                 border: none;
-                padding: 8px 16px;
-                border-radius: 4px;
+                padding: 8px 15px;
+                border-radius: 6px;
                 font-weight: bold;
             }
             QPushButton:hover {
-                background-color: #138496;
+                background-color: rgba(255,255,255,0.3);
             }
         """)
-        header_layout.addWidget(btn_cargar_csv)
         
-        # Botón nueva plantilla (solo admin/superadmin)
-        if self.usuario.rol in ["superadmin", "admin"]:
-            btn_nueva = QPushButton("+ Nueva Plantilla")
-            btn_nueva.clicked.connect(self.crear_nueva_plantilla)
-            btn_nueva.setStyleSheet("""
-                QPushButton {
-                    background-color: #4CAF50;
-                    color: white;
-                    border: none;
-                    padding: 8px 16px;
-                    border-radius: 4px;
-                    font-weight: bold;
-                }
-                QPushButton:hover {
-                    background-color: #45a049;
-                }
-            """)
-            header_layout.addWidget(btn_nueva)
-        
-        layout.addLayout(header_layout)
-        
-        # Botón nueva plantilla (solo admin/superadmin)
-        if self.usuario.rol in ["superadmin", "admin"]:
-            btn_nueva = QPushButton("+ Nueva Plantilla")
-            btn_nueva.clicked.connect(self.crear_nueva_plantilla)
-            btn_nueva.setStyleSheet("""
-                QPushButton {
-                    background-color: #4CAF50;
-                    color: white;
-                    border: none;
-                    padding: 8px 16px;
-                    border-radius: 4px;
-                    font-weight: bold;
-                }
-                QPushButton:hover {
-                    background-color: #45a049;
-                }
-            """)
-            header_layout.addWidget(btn_nueva)
-        
-        layout.addLayout(header_layout)
-        
-        # Información del proyecto
+        # Título del proyecto
         self.lbl_titulo = QLabel("Cargando proyecto...")
-        self.lbl_titulo.setFont(QFont("Arial", 16, QFont.Weight.Bold))
-        self.lbl_titulo.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.lbl_titulo)
+        self.lbl_titulo.setFont(QFont("Arial", 14, QFont.Weight.Bold))
+        self.lbl_titulo.setStyleSheet("color: white;")
         
+        top_bar.addWidget(btn_volver)
+        top_bar.addStretch()
+        top_bar.addWidget(self.lbl_titulo)
+        top_bar.addStretch()
+        
+        # Botón nueva plantilla (destacado)
+        self.btn_nueva = QPushButton("✨ Nueva Plantilla")
+        self.btn_nueva.clicked.connect(self.crear_nueva_plantilla)
+        self.btn_nueva.setStyleSheet("""
+            QPushButton {
+                background-color: #FF9800;
+                color: white;
+                border: none;
+                padding: 10px 20px;
+                border-radius: 8px;
+                font-weight: bold;
+                font-size: 13px;
+            }
+            QPushButton:hover {
+                background-color: #F57C00;
+            }
+        """)
+        top_bar.addWidget(self.btn_nueva)
+        
+        header_layout.addLayout(top_bar)
+        
+        # Descripción
         self.lbl_descripcion = QLabel()
-        self.lbl_descripcion.setStyleSheet("color: #666; font-size: 12px;")
-        self.lbl_descripcion.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_descripcion.setStyleSheet("color: rgba(255,255,255,0.9); font-size: 12px;")
         self.lbl_descripcion.setWordWrap(True)
-        layout.addWidget(self.lbl_descripcion)
+        header_layout.addWidget(self.lbl_descripcion)
         
-        # Separador
-        separator = QFrame()
-        separator.setFrameShape(QFrame.Shape.HLine)
-        separator.setFrameShadow(QFrame.Shadow.Sunken)
-        layout.addWidget(separator)
+        header.setLayout(header_layout)
+        layout.addWidget(header)
         
-        # Subtítulo
-        subtitle = QLabel("Plantillas Disponibles")
-        subtitle.setFont(QFont("Arial", 14, QFont.Weight.Bold))
-        layout.addWidget(subtitle)
+        # BARRA DE HERRAMIENTAS
+        toolbar = QFrame()
+        toolbar_layout = QHBoxLayout()
         
-        # Área de plantillas
+        # Búsqueda
+        self.txt_buscar = QLineEdit()
+        self.txt_buscar.setPlaceholderText("🔍 Buscar plantillas...")
+        self.txt_buscar.textChanged.connect(self.filtrar_plantillas)
+        self.txt_buscar.setStyleSheet("""
+            QLineEdit {
+                padding: 8px 12px;
+                border: 2px solid #E0E0E0;
+                border-radius: 6px;
+                font-size: 13px;
+            }
+            QLineEdit:focus {
+                border-color: #2196F3;
+            }
+        """)
+        toolbar_layout.addWidget(self.txt_buscar)
+        
+        toolbar_layout.addStretch()
+        
+        # Filtros
+        self.combo_filtro = QComboBox()
+        self.combo_filtro.addItems(["Todas", "Activas", "Inactivas", "Cartas", "Notificaciones", "Oficios"])
+        self.combo_filtro.currentTextChanged.connect(self.filtrar_plantillas)
+        toolbar_layout.addWidget(QLabel("Filtrar:"))
+        toolbar_layout.addWidget(self.combo_filtro)
+        
+        # Orden
+        self.combo_orden = QComboBox()
+        self.combo_orden.addItems(["Más recientes", "A-Z", "Z-A", "Más usadas"])
+        self.combo_orden.currentTextChanged.connect(self.ordenar_plantillas)
+        toolbar_layout.addWidget(QLabel("Orden:"))
+        toolbar_layout.addWidget(self.combo_orden)
+        
+        toolbar.setLayout(toolbar_layout)
+        layout.addWidget(toolbar)
+        
+        # CONTADOR
+        self.lbl_contador = QLabel()
+        self.lbl_contador.setStyleSheet("""
+            QLabel {
+                color: #666;
+                font-size: 12px;
+                padding: 5px 10px;
+                background-color: #F5F5F5;
+                border-radius: 4px;
+                border-left: 3px solid #4CAF50;
+            }
+        """)
+        layout.addWidget(self.lbl_contador)
+        
+        # ÁREA DE PLANTILLAS
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_area.setFrameShape(QFrame.Shape.NoFrame)
         
         self.plantillas_container = QWidget()
         self.grid_layout = QGridLayout()
-        self.grid_layout.setSpacing(15)
+        self.grid_layout.setSpacing(20)
         self.grid_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.grid_layout.setContentsMargins(10, 10, 10, 10)
         
         self.plantillas_container.setLayout(self.grid_layout)
         scroll_area.setWidget(self.plantillas_container)
-        
         layout.addWidget(scroll_area)
         
-        # Mensaje cuando no hay plantillas
-        self.lbl_sin_plantillas = QLabel("No hay plantillas disponibles para este proyecto")
-        self.lbl_sin_plantillas.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lbl_sin_plantillas.setFont(QFont("Arial", 12))
-        self.lbl_sin_plantillas.setStyleSheet("color: #666; padding: 40px;")
+        # MENSAJES DE ESTADO
+        self.lbl_sin_plantillas = self.crear_mensaje_estado(
+            "📭 No hay plantillas",
+            "Crea tu primera plantilla para este proyecto",
+            "#FF9800"
+        )
         layout.addWidget(self.lbl_sin_plantillas)
         self.lbl_sin_plantillas.hide()
         
-        # Mensaje de error
-        self.lbl_error = QLabel()
-        self.lbl_error.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lbl_error.setStyleSheet("color: #dc3545; padding: 20px;")
-        self.lbl_error.setWordWrap(True)
-        layout.addWidget(self.lbl_error)
-        self.lbl_error.hide()
+        self.lbl_sin_resultados = self.crear_mensaje_estado(
+            "🔍 No se encontraron resultados",
+            "Intenta con otros términos de búsqueda",
+            "#2196F3"
+        )
+        layout.addWidget(self.lbl_sin_resultados)
+        self.lbl_sin_resultados.hide()
         
         self.setLayout(layout)
     
-    def cargar_datos_proyecto(self):
-        """Carga la información del proyecto con manejo robusto de errores"""
-        db = SessionLocal()
-        try:
-            # Consulta DIRECTA y SIMPLE
-            self.proyecto = db.query(Proyecto).filter(Proyecto.id == self.proyecto_id).first()
-            
-            if self.proyecto:
-                self.lbl_titulo.setText(f"Proyecto: {self.proyecto.nombre}")
-                self.lbl_descripcion.setText(self.proyecto.descripcion or "Sin descripción")
-                self.lbl_error.hide()
-            else:
-                self.lbl_titulo.setText("Proyecto no encontrado")
-                self.lbl_error.setText(f"El proyecto con ID {self.proyecto_id} no existe en la base de datos")
-                self.lbl_error.show()
-                
-        except Exception as e:
-            error_msg = f"Error cargando proyecto: {str(e)}"
-            print(f"DEBUG - {error_msg}")  # Para debugging
-            self.lbl_titulo.setText("Error al cargar proyecto")
-            self.lbl_error.setText(error_msg)
-            self.lbl_error.show()
-        finally:
-            db.close()
+    def crear_mensaje_estado(self, titulo, subtitulo, color):
+        """Crea widget de mensaje de estado"""
+        frame = QFrame()
+        frame.setStyleSheet(f"""
+            QFrame {{
+                background-color: {color}10;
+                border: 2px dashed {color};
+                border-radius: 10px;
+                padding: 40px;
+            }}
+        """)
+        
+        layout = QVBoxLayout()
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        lbl_titulo = QLabel(titulo)
+        lbl_titulo.setFont(QFont("Arial", 14, QFont.Weight.Bold))
+        lbl_titulo.setStyleSheet(f"color: {color};")
+        
+        lbl_subtitulo = QLabel(subtitulo)
+        lbl_subtitulo.setFont(QFont("Arial", 11))
+        lbl_subtitulo.setStyleSheet("color: #666;")
+        
+        layout.addWidget(lbl_titulo)
+        layout.addWidget(lbl_subtitulo)
+        frame.setLayout(layout)
+        
+        return frame
     
-    def cargar_csv(self):
-        """Abre el cargador de CSV"""
-        print("DEBUG: Abriendo cargador CSV")
-        
-        if self.stacked_widget:
-            try:
-                cargador_csv = CargadorCSV(self.usuario, self.proyecto_id)
-                cargador_csv.procesamiento_completado.connect(self.on_csv_procesado)
-                
-                self.stacked_widget.addWidget(cargador_csv)
-                self.stacked_widget.setCurrentWidget(cargador_csv)
-                print("DEBUG: Cargador CSV mostrado exitosamente")
-            except Exception as e:
-                print(f"DEBUG: Error abriendo cargador CSV: {e}")
-                QMessageBox.critical(self, "Error", f"No se pudo abrir el cargador CSV: {str(e)}")
-        else:
-            QMessageBox.information(self, "Cargar CSV", 
-                                "Funcionalidad de carga CSV disponible en contexto de navegación")
-
-    def on_csv_procesado(self, sesion_id: str):
-        """Cuando se completa el procesamiento de CSV"""
-        print(f"DEBUG: CSV procesado - Sesión: {sesion_id}")
-        # Aquí podríamos navegar automáticamente al emisor de documentos
-        QMessageBox.information(
-            self,
-            "CSV Procesado",
-            f"✅ CSV procesado exitosamente.\n\nSesión: {sesion_id}\n\n"
-            f"Ahora puede generar los documentos PDF."
-        )
-
-    def usar_plantilla(self, plantilla_id):
-        """Usa la plantilla seleccionada para generar documentos"""
-        print(f"DEBUG: Usando plantilla {plantilla_id} para generación")
-        
-        if self.stacked_widget:
-            try:
-                emisor = EmisorDocumentos(self.usuario, self.proyecto_id, plantilla_id, self.sesion_id_csv)
-                emisor.generacion_completada.connect(self.on_generacion_completada)
-                
-                self.stacked_widget.addWidget(emisor)
-                self.stacked_widget.setCurrentWidget(emisor)
-                print("DEBUG: Emisor de documentos mostrado exitosamente")
-            except Exception as e:
-                print(f"DEBUG: Error abriendo emisor: {e}")
-                QMessageBox.critical(self, "Error", f"No se pudo abrir el emisor: {str(e)}")
-        else:
-            QMessageBox.information(self, "Usar Plantilla", 
-                                f"Plantilla {plantilla_id} seleccionada")
-
-    def on_csv_procesado(self, sesion_id: str):
-        """Cuando se completa el procesamiento de CSV"""
-        print(f"DEBUG: CSV procesado - Sesión: {sesion_id}")
-        self.sesion_id_csv = sesion_id  # Guardar para usar en el emisor
-        
-        # Preguntar si quiere generar documentos ahora
-        reply = QMessageBox.question(
-            self,
-            "CSV Procesado",
-            f"✅ CSV procesado exitosamente.\n\n¿Desea generar los documentos PDF ahora?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
-        
-        if reply == QMessageBox.StandardButton.Yes:
-            # Navegar al emisor de documentos
-            if self.stacked_widget and hasattr(self, 'sesion_id_csv'):
-                emisor = EmisorDocumentos(self.usuario, self.proyecto_id, None, self.sesion_id_csv)
-                self.stacked_widget.addWidget(emisor)
-                self.stacked_widget.setCurrentWidget(emisor)
-
-    def on_generacion_completada(self):
-        """Cuando se completa la generación de documentos"""
-        print("DEBUG: Generación de documentos completada")
-        # Podríamos navegar de vuelta o mostrar resumen
-
-    def cargar_plantillas(self):
-        """Carga las plantillas del proyecto"""
-        # Primero verificar que el proyecto se cargó correctamente
-        if not self.proyecto:
-            return
-            
+    def cargar_datos(self):
+        """Carga proyecto y plantillas"""
         db = SessionLocal()
         try:
-            # Método DIRECTO sin usar ProjectService para evitar problemas
+            # Cargar proyecto
+            self.proyecto = db.query(Proyecto).filter(Proyecto.id == self.proyecto_id).first()
+            if self.proyecto:
+                self.lbl_titulo.setText(f"Plantillas - {self.proyecto.nombre}")
+                self.lbl_descripcion.setText(self.proyecto.descripcion or "Sin descripción")
+            
+            # Cargar plantillas
             self.plantillas = db.query(Plantilla).filter(
                 Plantilla.proyecto_id == self.proyecto_id,
-                Plantilla.activa == True
+                Plantilla.is_deleted == False
             ).all()
             
+            self.plantillas_filtradas = self.plantillas.copy()
             self.mostrar_plantillas()
+            self.actualizar_contador()
             
         except Exception as e:
-            error_msg = f"Error cargando plantillas: {str(e)}"
-            print(f"DEBUG - {error_msg}")  # Para debugging
-            self.lbl_error.setText(f"{self.lbl_error.text()}\n{error_msg}" if self.lbl_error.text() else error_msg)
-            self.lbl_error.show()
+            QMessageBox.critical(self, "Error", f"Error cargando datos: {str(e)}")
         finally:
             db.close()
     
     def mostrar_plantillas(self):
-        """Muestra las plantillas en la grid"""
-        # Limpiar layout
+        """Muestra plantillas en grid"""
+        # Limpiar grid
         for i in reversed(range(self.grid_layout.count())): 
             widget = self.grid_layout.itemAt(i).widget()
             if widget:
@@ -300,142 +256,440 @@ class DashboardPlantillas(QWidget):
         
         if not self.plantillas:
             self.lbl_sin_plantillas.show()
+            self.lbl_sin_resultados.hide()
             return
         
-        self.lbl_sin_plantillas.hide()
+        if not self.plantillas_filtradas:
+            self.lbl_sin_plantillas.hide()
+            self.lbl_sin_resultados.show()
+            return
         
-        # Crear tarjetas de plantillas
-        for i, plantilla in enumerate(self.plantillas):
-            card = self.crear_tarjeta_plantilla(plantilla)
+        # Ocultar mensajes
+        self.lbl_sin_plantillas.hide()
+        self.lbl_sin_resultados.hide()
+        
+        # Mostrar plantillas (3 columnas responsive)
+        for i, plantilla in enumerate(self.plantillas_filtradas):
+            card = self.crear_card_plantilla(plantilla)
             row = i // 3
             col = i % 3
             self.grid_layout.addWidget(card, row, col)
     
-    def crear_tarjeta_plantilla(self, plantilla):
-        """Crea una tarjeta para una plantilla"""
+    def crear_card_plantilla(self, plantilla):
+        """Crea tarjeta moderna para plantilla"""
         card = QFrame()
-        card.setFrameStyle(QFrame.Shape.StyledPanel)
-        card.setFixedSize(250, 150)
-        card.setStyleSheet("""
-            QFrame {
-                background-color: white;
-                border: 1px solid #ddd;
-                border-radius: 8px;
-                padding: 12px;
-            }
-            QFrame:hover {
+        card.setFixedSize(280, 220)
+        card.setCursor(Qt.CursorShape.PointingHandCursor)
+        
+        # Estilos según estado
+        if plantilla.activa:
+            border_color = "#4CAF50"
+            bg_color = "#FFFFFF"
+        else:
+            border_color = "#9E9E9E"
+            bg_color = "#FAFAFA"
+        
+        card.setStyleSheet(f"""
+            QFrame {{
+                background-color: {bg_color};
+                border: 2px solid {border_color};
+                border-radius: 10px;
+                padding: 15px;
+            }}
+            QFrame:hover {{
                 border-color: #2196F3;
-                background-color: #f8fdff;
-            }
+                background-color: #F8FDFF;
+            }}
         """)
         
         layout = QVBoxLayout()
+        layout.setSpacing(10)
+        
+        # Icono según tipo
+        icono = self.obtener_icono_tipo(plantilla.tipo_plantilla)
+        lbl_icono = QLabel(icono)
+        lbl_icono.setFont(QFont("Arial", 24))
+        lbl_icono.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(lbl_icono)
         
         # Nombre
-        name_label = QLabel(plantilla.nombre)
-        name_label.setFont(QFont("Arial", 12, QFont.Weight.Bold))
-        name_label.setWordWrap(True)
-        layout.addWidget(name_label)
+        lbl_nombre = QLabel(plantilla.nombre)
+        lbl_nombre.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        lbl_nombre.setWordWrap(True)
+        lbl_nombre.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(lbl_nombre)
         
-        # Descripción
-        desc_label = QLabel(plantilla.descripcion or "Sin descripción")
-        desc_label.setWordWrap(True)
-        desc_label.setStyleSheet("color: #666; font-size: 11px;")
-        layout.addWidget(desc_label)
+        # Descripción (truncada)
+        desc = plantilla.descripcion or "Sin descripción"
+        if len(desc) > 60:
+            desc = desc[:57] + "..."
+        
+        lbl_desc = QLabel(desc)
+        lbl_desc.setStyleSheet("color: #666; font-size: 11px;")
+        lbl_desc.setWordWrap(True)
+        lbl_desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(lbl_desc)
+        
+        # Estado y fecha
+        info_layout = QHBoxLayout()
+        
+        estado = QLabel("✅ Activa" if plantilla.activa else "⏸️ Inactiva")
+        estado.setStyleSheet(f"""
+            color: {'#4CAF50' if plantilla.activa else '#9E9E9E'};
+            font-size: 10px;
+            font-weight: bold;
+        """)
+        
+        fecha = QLabel(plantilla.fecha_creacion.strftime("%d/%m/%Y"))
+        fecha.setStyleSheet("color: #999; font-size: 10px;")
+        
+        info_layout.addWidget(estado)
+        info_layout.addStretch()
+        info_layout.addWidget(fecha)
+        layout.addLayout(info_layout)
         
         layout.addStretch()
         
-        # Estado
-        status_label = QLabel("ACTIVA" if plantilla.activa else "INACTIVA")
-        status_label.setStyleSheet(
-            "background-color: #4CAF50; color: white; padding: 2px 6px; border-radius: 3px; font-size: 10px;" 
-            if plantilla.activa else
-            "background-color: #f44336; color: white; padding: 2px 6px; border-radius: 3px; font-size: 10px;"
-        )
-        layout.addWidget(status_label)
-        
         # Botones de acción
-        button_layout = QHBoxLayout()
+        btn_layout = QHBoxLayout()
         
-        btn_usar = QPushButton("Usar Plantilla")
-        btn_usar.clicked.connect(lambda: self.usar_plantilla(plantilla.id))
-        btn_usar.setStyleSheet("""
-            QPushButton {
-                background-color: #2196F3;
-                color: white;
-                border: none;
-                padding: 5px 10px;
-                border-radius: 3px;
-                font-size: 11px;
-            }
-            QPushButton:hover {
-                background-color: #1976D2;
-            }
-        """)
-        button_layout.addWidget(btn_usar)
-        
-        # Solo admin/superadmin pueden editar
-        if self.usuario.rol in ["superadmin", "admin"]:
-            btn_editar = QPushButton("Editar")
-            btn_editar.clicked.connect(lambda: self.editar_plantilla(plantilla.id))
-            btn_editar.setStyleSheet("""
+        # Botón principal (Usar/Ver)
+        if plantilla.activa:
+            btn_accion = QPushButton("📄 Usar Plantilla")
+            btn_accion.clicked.connect(lambda: self.plantilla_seleccionada.emit(plantilla.id, "usar"))
+            btn_accion.setStyleSheet("""
                 QPushButton {
-                    background-color: #FF9800;
+                    background-color: #4CAF50;
                     color: white;
                     border: none;
-                    padding: 5px 10px;
-                    border-radius: 3px;
+                    padding: 6px 12px;
+                    border-radius: 4px;
                     font-size: 11px;
                 }
                 QPushButton:hover {
-                    background-color: #F57C00;
+                    background-color: #45a049;
                 }
             """)
-            button_layout.addWidget(btn_editar)
+        else:
+            btn_accion = QPushButton("👁️ Ver")
+            btn_accion.clicked.connect(lambda: self.plantilla_seleccionada.emit(plantilla.id, "ver"))
+            btn_accion.setStyleSheet("""
+                QPushButton {
+                    background-color: #9E9E9E;
+                    color: white;
+                    border: none;
+                    padding: 6px 12px;
+                    border-radius: 4px;
+                    font-size: 11px;
+                }
+            """)
         
-        layout.addLayout(button_layout)
+        btn_layout.addWidget(btn_accion)
+        
+        # Menú de opciones (solo admin/superadmin)
+        if self.usuario.rol in ["superadmin", "admin"]:
+            btn_menu = QToolButton()
+            btn_menu.setText("⋮")
+            btn_menu.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+            
+            menu = QMenu()
+            
+            action_editar = QAction("✏️ Editar", self)
+            action_editar.triggered.connect(lambda: self.plantilla_seleccionada.emit(plantilla.id, "editar"))
+            
+            action_duplicar = QAction("📋 Duplicar", self)
+            action_duplicar.triggered.connect(lambda: self.duplicar_plantilla(plantilla.id))
+            
+            if plantilla.activa:
+                action_desactivar = QAction("⏸️ Desactivar", self)
+                action_desactivar.triggered.connect(lambda: self.cambiar_estado_plantilla(plantilla.id, False))
+            else:
+                action_activar = QAction("▶️ Activar", self)
+                action_activar.triggered.connect(lambda: self.cambiar_estado_plantilla(plantilla.id, True))
+            
+            action_eliminar = QAction("🗑️ Eliminar", self)
+            action_eliminar.triggered.connect(lambda: self.eliminar_plantilla(plantilla.id))
+            
+            menu.addAction(action_editar)
+            menu.addAction(action_duplicar)
+            menu.addSeparator()
+            menu.addAction(action_desactivar if plantilla.activa else action_activar)
+            menu.addAction(action_eliminar)
+            
+            btn_menu.setMenu(menu)
+            btn_layout.addWidget(btn_menu)
+        
+        layout.addLayout(btn_layout)
         card.setLayout(layout)
         
         return card
     
-    def usar_plantilla(self, plantilla_id):
-        """Usa la plantilla seleccionada"""
-        QMessageBox.information(self, "Usar Plantilla", 
-                              f"Plantilla {plantilla_id} seleccionada. Preparando emisor de documentos...")
+    def obtener_icono_tipo(self, tipo):
+        """Devuelve icono según tipo de plantilla"""
+        iconos = {
+            "carta": "📝",
+            "notificacion": "📢", 
+            "oficio": "📄",
+            "comunicado": "🗞️",
+            "cobranza": "💸",
+            "pensiones": "👵",
+            None: "📁"
+        }
+        return iconos.get(tipo, "📁")
+    
+    def filtrar_plantillas(self):
+        """Filtra plantillas por texto y filtros"""
+        texto = self.txt_buscar.text().lower().strip()
+        filtro = self.combo_filtro.currentText()
         
+        self.plantillas_filtradas = []
+        
+        for plantilla in self.plantillas:
+            # Filtro por texto
+            if texto and texto not in plantilla.nombre.lower():
+                if not plantilla.descripcion or texto not in plantilla.descripcion.lower():
+                    continue
+            
+            # Filtro por estado/tipo
+            if filtro == "Activas" and not plantilla.activa:
+                continue
+            elif filtro == "Inactivas" and plantilla.activa:
+                continue
+            elif filtro not in ["Todas", "Activas", "Inactivas"]:
+                if plantilla.tipo_plantilla != filtro.lower():
+                    continue
+            
+            self.plantillas_filtradas.append(plantilla)
+        
+        self.ordenar_plantillas()
+        self.actualizar_contador()
+    
+    def ordenar_plantillas(self):
+        """Ordena plantillas según criterio"""
+        criterio = self.combo_orden.currentText()
+        
+        if criterio == "Más recientes":
+            self.plantillas_filtradas.sort(key=lambda x: x.fecha_creacion, reverse=True)
+        elif criterio == "A-Z":
+            self.plantillas_filtradas.sort(key=lambda x: x.nombre.lower())
+        elif criterio == "Z-A":
+            self.plantillas_filtradas.sort(key=lambda x: x.nombre.lower(), reverse=True)
+        # "Más usadas" requeriría tracking de uso
+        
+        self.mostrar_plantillas()
+    
+    def actualizar_contador(self):
+        """Actualiza contador de resultados"""
+        total = len(self.plantillas)
+        filtradas = len(self.plantillas_filtradas)
+        
+        if total == 0:
+            self.lbl_contador.setText("No hay plantillas en este proyecto")
+        elif total == filtradas:
+            self.lbl_contador.setText(f"📋 Mostrando {total} plantillas")
+        else:
+            self.lbl_contador.setText(f"🔍 {filtradas} de {total} plantillas")
+    
     def crear_nueva_plantilla(self):
-        """Crea una nueva plantilla"""
-        print(f"DEBUG: crear_nueva_plantilla() llamado")
-        print(f"DEBUG: stacked_widget = {self.stacked_widget}")
-        print(f"DEBUG: usuario.rol = {self.usuario.rol}")
+        """Abre editor para nueva plantilla"""
+        from PyQt6.QtWidgets import QFileDialog
         
-        if self.stacked_widget:
-            print("DEBUG: Creando FormularioPlantilla...")
-            formulario = FormularioPlantilla(self.usuario, self.proyecto_id)
-            formulario.plantilla_guardada.connect(self.on_plantilla_guardada)
-            
-            self.stacked_widget.addWidget(formulario)
-            self.stacked_widget.setCurrentWidget(formulario)
-            print("DEBUG: Formulario mostrado correctamente")
-        else:
-            print("DEBUG: stacked_widget es None, mostrando fallback")
-            QMessageBox.information(self, "Nueva Plantilla", 
-                                "Formulario de nueva plantilla listo para implementar")
-
+        pdf_path, _ = QFileDialog.getOpenFileName(
+            self, 
+            "Seleccionar PDF Base", 
+            "", 
+            "Archivos PDF (*.pdf)"
+        )
+        
+        if not pdf_path:
+            return
+        
+        # IMPORTANTE: Resetear plantilla_a_editar
+        if hasattr(self, 'plantilla_a_editar'):
+            delattr(self, 'plantilla_a_editar')
+        
+        self.abrir_editor_con_pdf(pdf_path)
+    
     def editar_plantilla(self, plantilla_id):
-        """Edita la plantilla seleccionada"""
-        if self.stacked_widget:
-            formulario = FormularioPlantilla(self.usuario, self.proyecto_id, plantilla_id)
-            formulario.plantilla_guardada.connect(self.on_plantilla_guardada)
-            
-            self.stacked_widget.addWidget(formulario)
-            self.stacked_widget.setCurrentWidget(formulario)
-        else:
-            QMessageBox.information(self, "Editar Plantilla", 
-                                f"Editando plantilla {plantilla_id}")
+        """Abre editor para editar plantilla existente"""
+        from config.database import SessionLocal
+        from core.models import Plantilla
+        
+        db = SessionLocal()
+        try:
+            plantilla = db.query(Plantilla).filter(Plantilla.id == plantilla_id).first()
+            if plantilla and plantilla.campos_json:
+                # Guardar datos de la plantilla para editar
+                self.plantilla_a_editar = plantilla.campos_json
+                self.plantilla_a_editar["nombre"] = plantilla.nombre
+                self.plantilla_a_editar["id"] = plantilla.id
+                
+                # Abrir editor con el PDF de la plantilla
+                if plantilla.ruta_archivo and os.path.exists(plantilla.ruta_archivo):
+                    self.abrir_editor_con_pdf(plantilla.ruta_archivo, self.plantilla_a_editar)
+                else:
+                    QMessageBox.warning(self, "Error", 
+                                    f"El archivo PDF no existe: {plantilla.ruta_archivo}")
+            else:
+                QMessageBox.warning(self, "Error", "Plantilla no encontrada o sin campos")
+        finally:
+            db.close()
 
-    def on_plantilla_guardada(self):
-        """Cuando se guarda una plantilla"""
-        self.cargar_plantillas()
+    def abrir_editor_con_pdf(self, pdf_path, plantilla_existente=None):
+        """Abre el nuevo editor"""
+        try:
+            from ui.modules.plantillas.editor_plantillas import EditorPlantillas
+            
+            editor = EditorPlantillas(
+                usuario=self.usuario,
+                proyecto_id=self.proyecto_id,
+                pdf_path=pdf_path,
+                stacked_widget=self.stacked_widget,
+                plantilla_id=plantilla_existente.get('id') if plantilla_existente else None
+            )
+            
+            editor.plantilla_guardada.connect(self.on_plantilla_guardada)
+            
+            self.stacked_widget.addWidget(editor)
+            self.stacked_widget.setCurrentWidget(editor)
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"No se pudo abrir el editor: {str(e)}")
+
+    def on_plantilla_guardada(self, configuracion):
+        """Cuando se guarda una plantilla desde el editor"""
+        if not configuracion:
+            # Cancelado
+            if self.stacked_widget:
+                self.stacked_widget.setCurrentWidget(self)
+            return
+        
+        # Guardar en base de datos
+        from config.database import SessionLocal
+        from core.models import Plantilla
+        from PyQt6.QtWidgets import QInputDialog
+        
+        db = SessionLocal()
+        try:
+            # Pedir nombre de la plantilla
+            nombre, ok = QInputDialog.getText(
+                self, "Nombre de la plantilla",
+                "Ingresa un nombre para la plantilla:",
+                text=f"Plantilla {len(self.plantillas) + 1}"
+            )
+            
+            if not ok or not nombre.strip():
+                return
+            
+            # Crear plantilla
+            plantilla = Plantilla(
+                proyecto_id=self.proyecto_id,
+                nombre=nombre.strip(),
+                descripcion="Creada con el editor visual",
+                ruta_archivo=configuracion.get("pdf_base", ""),
+                tipo_plantilla="carta",
+                campos_json=configuracion,
+                activa=True,
+                usuario_creador=self.usuario.id,
+                is_deleted=False
+            )
+            
+            db.add(plantilla)
+            db.commit()
+            
+            # Actualizar lista
+            self.cargar_datos()
+            
+            # Volver al dashboard
+            if self.stacked_widget:
+                self.stacked_widget.setCurrentWidget(self)
+            
+            QMessageBox.information(self, "Éxito", "✅ Plantilla guardada correctamente")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error guardando plantilla: {str(e)}")
+            db.rollback()
+        finally:
+            db.close()
+
+    def on_plantilla_creada(self):
+        """Cuando se crea una nueva plantilla"""
+        self.cargar_datos()
         if self.stacked_widget:
             self.stacked_widget.setCurrentWidget(self)
+        
+        QMessageBox.information(self, "Éxito", "✅ Plantilla creada correctamente")
+    
+    def volver_proyectos(self):
+        """Regresa al dashboard de proyectos"""
+        self.volver_a_proyectos.emit()  # ← ¡EMITIR LA SEÑAL!
+    
+    def duplicar_plantilla(self, plantilla_id):
+        """Duplica una plantilla existente"""
+        db = SessionLocal()
+        try:
+            plantilla = db.query(Plantilla).filter(Plantilla.id == plantilla_id).first()
+            if plantilla:
+                nueva = Plantilla(
+                    proyecto_id=plantilla.proyecto_id,
+                    nombre=f"{plantilla.nombre} (Copia)",
+                    descripcion=plantilla.descripcion,
+                    ruta_archivo=plantilla.ruta_archivo,
+                    tipo_plantilla=plantilla.tipo_plantilla,
+                    campos_json=plantilla.campos_json,
+                    activa=False,
+                    usuario_creador=self.usuario.id
+                )
+                db.add(nueva)
+                db.commit()
+                
+                self.cargar_datos()
+                QMessageBox.information(self, "Éxito", "✅ Plantilla duplicada")
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error duplicando plantilla: {str(e)}")
+        finally:
+            db.close()
+    
+    def cambiar_estado_plantilla(self, plantilla_id, activar):
+        """Activa/desactiva una plantilla"""
+        db = SessionLocal()
+        try:
+            plantilla = db.query(Plantilla).filter(Plantilla.id == plantilla_id).first()
+            if plantilla:
+                plantilla.activa = activar
+                db.commit()
+                
+                self.cargar_datos()
+                estado = "activada" if activar else "desactivada"
+                QMessageBox.information(self, "Éxito", f"✅ Plantilla {estado}")
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error cambiando estado: {str(e)}")
+        finally:
+            db.close()
+    
+    def eliminar_plantilla(self, plantilla_id):
+        """Elimina (soft delete) una plantilla"""
+        reply = QMessageBox.question(
+            self, "Confirmar eliminación",
+            "¿Está seguro de eliminar esta plantilla?\n\n"
+            "Esta acción marcará la plantilla como eliminada.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            db = SessionLocal()
+            try:
+                plantilla = db.query(Plantilla).filter(Plantilla.id == plantilla_id).first()
+                if plantilla:
+                    plantilla.is_deleted = True  # Soft delete
+                    db.commit()
+                    
+                    self.cargar_datos()
+                    QMessageBox.information(self, "Éxito", "✅ Plantilla eliminada")
+                    
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Error eliminando plantilla: {str(e)}")
+            finally:
+                db.close()

@@ -1,114 +1,113 @@
 # ui/modules/plantillas/editor_mejorado/campo_compuesto.py
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QMenu, QInputDialog, QFontDialog, QColorDialog
-from PyQt6.QtCore import Qt, pyqtSignal, QPoint, QRect
-from PyQt6.QtGui import QFont, QColor, QPainter, QPen, QAction, QCursor, QBrush
+from PyQt6.QtWidgets import (QFrame, QLabel, QHBoxLayout, QVBoxLayout,
+                             QPushButton, QMenu, QInputDialog, QDialog,
+                             QListWidget, QListWidgetItem, QDialogButtonBox,
+                             QFormLayout, QComboBox, QLineEdit)
+from PyQt6.QtCore import Qt, pyqtSignal, QPoint
+from PyQt6.QtGui import QPainter, QPen, QColor, QBrush, QMouseEvent
+import json
 
-class ComponenteCampo:
-    """Representa un componente dentro de un campo compuesto"""
-    def __init__(self, tipo, contenido=""):
-        self.tipo = tipo  # "texto" o "campo"
-        self.contenido = contenido
-        self.ancho = 50  # Ancho en píxeles
+class ComponenteCompuesto:
+    """Componente individual dentro de un campo compuesto"""
+    def __init__(self, tipo='texto', valor=''):
+        self.tipo = tipo  # 'texto' o 'campo'
+        self.valor = valor  # texto fijo o nombre columna
+    
+    def to_dict(self):
+        return {'tipo': self.tipo, 'valor': self.valor}
+    
+    @classmethod
+    def from_dict(cls, data):
+        return cls(data.get('tipo', 'texto'), data.get('valor', ''))
 
 class CampoCompuestoWidget(QFrame):
-    """Widget para campos compuestos (texto + campo + texto + campo)"""
+    """Campo que combina texto fijo y campos dinámicos en un solo widget"""
     
-    campo_modificado = pyqtSignal(dict)
     campo_seleccionado = pyqtSignal(object)
+    campo_modificado = pyqtSignal(dict)
     solicita_eliminar = pyqtSignal(object)
     
-    def __init__(self, nombre: str = "Campo Compuesto", parent=None):
+    def __init__(self, config=None, parent=None):
         super().__init__(parent)
-        self.nombre = nombre
-        self.tipo = "compuesto"
-        self.componentes = []
-        self.config = {
-            "nombre": nombre,
-            "tipo": "compuesto",
-            "x": 50,
-            "y": 50,
-            "ancho": 300,
-            "alto": 30,
-            "fuente": "Arial",
-            "tamano": 12,
-            "color": "#000000",
-            "negrita": False,
-            "cursiva": False
-        }
-        
-        self.seleccionado = False
-        self.drag_pos = None
-        self.redimensionando = False
-        self.resize_corner = None
-        self.manejador_size = 10
-        
+        self.config = config or self._config_default()
+        self.componentes = self._cargar_componentes()
         self.setup_ui()
+        self.setup_fisica()  # Hereda física de CampoSimpleWidget
         self.actualizar_estilo()
     
+    def _config_default(self):
+        return {
+            'nombre': 'Campo Compuesto',
+            'tipo': 'compuesto',
+            'x': 50.0, 'y': 50.0, 'ancho': 200.0, 'alto': 20.0,
+            'alineacion': 'left',
+            'fuente': 'Arial', 'tamano_fuente': 12,
+            'color': '#000000', 'negrita': False, 'cursiva': False,
+            'componentes': []  # Lista de componentes
+        }
+    
+    def _cargar_componentes(self):
+        """Carga componentes desde config"""
+        componentes = []
+        for comp_data in self.config.get('componentes', []):
+            componentes.append(ComponenteCompuesto.from_dict(comp_data))
+        return componentes
+    
     def setup_ui(self):
-        """Configura la interfaz del campo compuesto"""
+        """Configura interfaz dinámica"""
         self.setFrameStyle(QFrame.Shape.NoFrame)
-        self.setCursor(Qt.CursorShape.ArrowCursor)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         
         self.layout_principal = QHBoxLayout()
-        self.layout_principal.setContentsMargins(5, 5, 5, 5)
-        self.layout_principal.setSpacing(5)
+        self.layout_principal.setContentsMargins(5, 2, 5, 2)
+        self.layout_principal.setSpacing(3)
         
-        # Inicializar con un componente de texto por defecto
-        self.agregar_componente("texto", "Texto: ")
-        
-        self.setLayout(self.layout_principal)
-        self.setFixedSize(self.config["ancho"], self.config["alto"])
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-    
-    def agregar_componente(self, tipo, contenido=""):
-        """Agrega un componente al campo compuesto"""
-        componente = ComponenteCampo(tipo, contenido)
-        self.componentes.append(componente)
         self.actualizar_vista()
+        self.setLayout(self.layout_principal)
+        
+        # Tamaño inicial
+        self.setFixedSize(200, 25)
     
     def actualizar_vista(self):
-        """Actualiza la vista visual del campo compuesto"""
+        """Reconstruye la vista con los componentes actuales"""
         # Limpiar layout
         while self.layout_principal.count():
             item = self.layout_principal.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
         
-        # Reconstruir vista
+        # Construir vista
         for componente in self.componentes:
-            if componente.tipo == "texto":
-                lbl = QLabel(componente.contenido)
+            if componente.tipo == 'texto':
+                lbl = QLabel(componente.valor)
                 lbl.setStyleSheet(f"""
                     QLabel {{
                         background-color: transparent;
-                        color: {self.config['color']};
+                        color: #006600;
                         font-family: '{self.config['fuente']}';
-                        font-size: {self.config['tamano']}pt;
+                        font-size: {self.config['tamano_fuente']}px;
                         font-weight: {'bold' if self.config['negrita'] else 'normal'};
                         font-style: {'italic' if self.config['cursiva'] else 'normal'};
                     }}
                 """)
-                lbl.mouseDoubleClickEvent = lambda e, c=componente: self.editar_componente(c)
                 self.layout_principal.addWidget(lbl)
-            
-            elif componente.tipo == "campo":
-                campo_widget = QLabel(f"[{componente.contenido}]")
-                campo_widget.setStyleSheet(f"""
+                
+            else:  # campo
+                lbl = QLabel(f"{{{componente.valor}}}")
+                lbl.setStyleSheet(f"""
                     QLabel {{
                         background-color: rgba(144, 238, 144, 0.3);
-                        color: #006600;
+                        color: #0000CC;
                         border: 1px dashed #4CAF50;
-                        padding: 2px 5px;
+                        padding: 1px 3px;
                         font-family: '{self.config['fuente']}';
-                        font-size: {self.config['tamano']}pt;
+                        font-size: {self.config['tamano_fuente']}px;
                         font-weight: {'bold' if self.config['negrita'] else 'normal'};
                     }}
                 """)
-                campo_widget.mouseDoubleClickEvent = lambda e, c=componente: self.editar_componente(c)
-                self.layout_principal.addWidget(campo_widget)
+                self.layout_principal.addWidget(lbl)
         
-        # Botón para agregar más componentes
+        # Botón para agregar más
         btn_agregar = QPushButton("+")
         btn_agregar.setFixedSize(20, 20)
         btn_agregar.setStyleSheet("""
@@ -118,298 +117,139 @@ class CampoCompuestoWidget(QFrame):
                 border: none;
                 border-radius: 3px;
                 font-weight: bold;
+                font-size: 10px;
             }
             QPushButton:hover {
                 background-color: #45a049;
             }
         """)
-        btn_agregar.clicked.connect(self.mostrar_menu_agregar)
+        btn_agregar.clicked.connect(self.mostrar_dialogo_agregar)
         self.layout_principal.addWidget(btn_agregar)
     
-    def mostrar_menu_agregar(self):
-        """Muestra menú para agregar componentes"""
-        menu = QMenu(self)
-        
-        action_texto = QAction("📝 Agregar Texto", self)
-        action_texto.triggered.connect(lambda: self.agregar_nuevo_componente("texto"))
-        
-        action_campo = QAction("🔤 Agregar Campo", self)
-        action_campo.triggered.connect(lambda: self.agregar_nuevo_componente("campo"))
-        
-        menu.addAction(action_texto)
-        menu.addAction(action_campo)
-        menu.exec(QCursor.pos())
-    
-    def agregar_nuevo_componente(self, tipo):
-        """Agrega un nuevo componente del tipo especificado"""
-        if tipo == "texto":
-            texto, ok = QInputDialog.getText(self, "Texto", "Ingrese el texto:")
-            if ok and texto:
-                self.agregar_componente("texto", texto)
-        
-        elif tipo == "campo":
-            campo, ok = QInputDialog.getText(self, "Campo", "Nombre del campo dinámico:")
-            if ok and campo:
-                self.agregar_componente("campo", campo)
-    
-    def editar_componente(self, componente):
-        """Edita un componente existente"""
-        if componente.tipo == "texto":
-            nuevo_texto, ok = QInputDialog.getText(self, "Editar Texto", 
-                                                  "Editar texto:", 
-                                                  text=componente.contenido)
-            if ok:
-                componente.contenido = nuevo_texto
-                self.actualizar_vista()
-        
-        elif componente.tipo == "campo":
-            nuevo_campo, ok = QInputDialog.getText(self, "Editar Campo", 
-                                                  "Editar campo:", 
-                                                  text=componente.contenido)
-            if ok:
-                componente.contenido = nuevo_campo
-                self.actualizar_vista()
-    
-    # Métodos para arrastre y redimensionamiento (similares a CampoTextoWidget)
-    def mousePressEvent(self, event):
-        """Maneja clic para selección y arrastre"""
-        if event.button() == Qt.MouseButton.LeftButton:
-            pos = event.pos()
-            rect = self.rect()
-            
-            # Areas de redimensionamiento
-            handles = {
-                "top-left": QRect(0, 0, self.manejador_size, self.manejador_size),
-                "top-right": QRect(rect.width() - self.manejador_size, 0, self.manejador_size, self.manejador_size),
-                "bottom-left": QRect(0, rect.height() - self.manejador_size, self.manejador_size, self.manejador_size),
-                "bottom-right": QRect(rect.width() - self.manejador_size, rect.height() - self.manejador_size, self.manejador_size, self.manejador_size),
-            }
-            
-            # Verificar si es redimensionamiento
-            for corner_name, handle_rect in handles.items():
-                if handle_rect.contains(pos):
-                    self.redimensionando = True
-                    self.resize_corner = corner_name
-                    self.setCursor(self.get_resize_cursor(corner_name))
-                    self.resize_start_pos = event.globalPosition().toPoint()
-                    self.resize_start_size = self.size()
-                    self.resize_start_pos_widget = self.pos()
-                    return
-            
-            # Si no, es arrastre normal
-            self.drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
-            self.setCursor(Qt.CursorShape.SizeAllCursor)
-            self.campo_seleccionado.emit(self)
-            event.accept()
-    
-    def get_resize_cursor(self, corner_name):
-        """Devuelve el cursor apropiado para redimensionar"""
-        if corner_name == "top-left" or corner_name == "bottom-right":
-            return Qt.CursorShape.SizeFDiagCursor
-        elif corner_name == "top-right" or corner_name == "bottom-left":
-            return Qt.CursorShape.SizeBDiagCursor
-        return Qt.CursorShape.SizeAllCursor
-    
-    def mouseMoveEvent(self, event):
-        if event.buttons() & Qt.MouseButton.LeftButton:
-            if self.redimensionando and self.resize_corner:
-                # Redimensionar
-                delta = event.globalPosition().toPoint() - self.resize_start_pos
-                
-                new_width = self.resize_start_size.width()
-                new_height = self.resize_start_size.height()
-                new_x = self.x()
-                new_y = self.y()
-                
-                if "right" in self.resize_corner:
-                    new_width = max(100, self.resize_start_size.width() + delta.x())
-                elif "left" in self.resize_corner:
-                    new_width = max(100, self.resize_start_size.width() - delta.x())
-                    if new_width > 100:
-                        new_x = self.resize_start_pos_widget.x() + delta.x()
-                
-                if "bottom" in self.resize_corner:
-                    new_height = max(30, self.resize_start_size.height() + delta.y())
-                elif "top" in self.resize_corner:
-                    new_height = max(30, self.resize_start_size.height() - delta.y())
-                    if new_height > 30:
-                        new_y = self.resize_start_pos_widget.y() + delta.y()
-                
-                self.move(new_x, new_y)
-                self.setFixedSize(new_width, new_height)
-                
-                self.config["x"] = new_x
-                self.config["y"] = new_y
-                self.config["ancho"] = new_width
-                self.config["alto"] = new_height
-                
-                self.campo_modificado.emit({
-                    "x": new_x,
-                    "y": new_y,
-                    "ancho": new_width,
-                    "alto": new_height
-                })
-                
-            elif self.drag_pos:
-                # Arrastrar
-                new_pos = event.globalPosition().toPoint() - self.drag_pos
-                self.move(new_pos)
-                
-                self.config["x"] = new_pos.x()
-                self.config["y"] = new_pos.y()
-                self.campo_modificado.emit({"x": new_pos.x(), "y": new_pos.y()})
-    
-    def mouseReleaseEvent(self, event):
-        self.redimensionando = False
-        self.drag_pos = None
-        self.resize_corner = None
-        self.setCursor(Qt.CursorShape.ArrowCursor)
-    
-    def enterEvent(self, event):
-        """Cambia cursor al pasar sobre el campo"""
-        if not self.seleccionado:
-            self.setCursor(Qt.CursorShape.PointingHandCursor)
-        super().enterEvent(event)
-    
-    def leaveEvent(self, event):
-        """Restaura cursor al salir"""
-        if not self.seleccionado:
-            self.setCursor(Qt.CursorShape.ArrowCursor)
-        super().leaveEvent(event)
-    
-    def paintEvent(self, event):
-        """Dibuja solo cuando está seleccionado"""
-        super().paintEvent(event)
-        
-        if self.seleccionado:
-            painter = QPainter(self)
-            
-            # Borde punteado rojo
-            painter.setPen(QPen(QColor(255, 0, 0), 1, Qt.PenStyle.DashLine))
-            painter.drawRect(0, 0, self.width()-1, self.height()-1)
-            
-            # Dibujar manejadores de redimensionamiento
-            painter.setPen(QPen(QColor(0, 120, 215), 2))
-            painter.setBrush(QBrush(QColor(255, 255, 255)))
-            
-            # Esquinas
-            corners = [
-                QRect(0, 0, self.manejador_size, self.manejador_size),
-                QRect(self.width() - self.manejador_size, 0, self.manejador_size, self.manejador_size),
-                QRect(0, self.height() - self.manejador_size, self.manejador_size, self.manejador_size),
-                QRect(self.width() - self.manejador_size, self.height() - self.manejador_size, self.manejador_size, self.manejador_size)
-            ]
-            
-            for corner in corners:
-                painter.drawRect(corner)
-    
-    def contextMenuEvent(self, event):
-        """Menú contextual"""
-        menu = QMenu(self)
-        
-        action_configurar = QAction("⚙️ Configurar campo compuesto", self)
-        action_configurar.triggered.connect(self.configurar_campo)
-        
-        action_eliminar = QAction("🗑️ Eliminar campo", self)
-        action_eliminar.triggered.connect(self.eliminar_campo)
-        
-        menu.addAction(action_configurar)
-        menu.addSeparator()
-        menu.addAction(action_eliminar)
-        
-        menu.exec(event.globalPos())
-    
-    def configurar_campo(self):
-        """Configura el campo compuesto"""
-        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QFontDialog, QColorDialog
-        
+    def mostrar_dialogo_agregar(self):
+        """Muestra diálogo para agregar componente"""
         dialog = QDialog(self)
-        dialog.setWindowTitle("Configurar Campo Compuesto")
-        dialog.setFixedSize(400, 300)
+        dialog.setWindowTitle("Agregar componente")
+        dialog.setFixedSize(300, 200)
         
         layout = QVBoxLayout()
         
+        # Tipo
         form_layout = QFormLayout()
+        combo_tipo = QComboBox()
+        combo_tipo.addItems(["Texto fijo", "Campo de BD"])
         
-        # Nombre
-        from PyQt6.QtWidgets import QLineEdit
-        self.txt_nombre_config = QLineEdit(self.nombre)
-        form_layout.addRow("Nombre:", self.txt_nombre_config)
+        txt_valor = QLineEdit()
+        txt_valor.setPlaceholderText("Texto o nombre de columna...")
         
-        # Botones para fuente y color
-        btn_fuente = QPushButton("🔤 Cambiar Fuente")
-        btn_fuente.clicked.connect(self.cambiar_fuente)
-        
-        btn_color = QPushButton("🎨 Cambiar Color")
-        btn_color.clicked.connect(self.cambiar_color)
-        
-        form_layout.addRow("Fuente:", btn_fuente)
-        form_layout.addRow("Color:", btn_color)
+        form_layout.addRow("Tipo:", combo_tipo)
+        form_layout.addRow("Valor:", txt_valor)
         
         layout.addLayout(form_layout)
         
         # Botones
-        from PyQt6.QtWidgets import QDialogButtonBox
-        btn_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | 
-                                   QDialogButtonBox.StandardButton.Cancel)
-        btn_box.accepted.connect(lambda: self.aplicar_configuracion(dialog))
+        btn_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | 
+            QDialogButtonBox.StandardButton.Cancel
+        )
+        btn_box.accepted.connect(dialog.accept)
         btn_box.rejected.connect(dialog.reject)
         
         layout.addWidget(btn_box)
         dialog.setLayout(layout)
-        dialog.exec()
-    
-    def cambiar_fuente(self):
-        """Cambia la fuente"""
-        font = QFont(self.config["fuente"], self.config["tamano"])
-        font.setBold(self.config["negrita"])
-        font.setItalic(self.config["cursiva"])
         
-        font, ok = QFontDialog.getFont(font, self, "Seleccionar fuente")
-        if ok:
-            self.config["fuente"] = font.family()
-            self.config["tamano"] = font.pointSize()
-            self.config["negrita"] = font.bold()
-            self.config["cursiva"] = font.italic()
-            self.actualizar_vista()
-            self.campo_modificado.emit({
-                "fuente": font.family(),
-                "tamano": font.pointSize(),
-                "negrita": font.bold(),
-                "cursiva": font.italic()
-            })
+        if dialog.exec():
+            tipo = 'texto' if combo_tipo.currentText() == 'Texto fijo' else 'campo'
+            valor = txt_valor.text().strip()
+            
+            if valor:
+                self.agregar_componente(tipo, valor)
     
-    def cambiar_color(self):
-        """Cambia el color"""
-        color = QColorDialog.getColor(QColor(self.config["color"]), self, "Seleccionar color")
-        if color.isValid():
-            self.config["color"] = color.name()
-            self.actualizar_vista()
-            self.campo_modificado.emit({"color": color.name()})
+    def agregar_componente(self, tipo, valor):
+        """Agrega un nuevo componente"""
+        self.componentes.append(ComponenteCompuesto(tipo, valor))
+        self.actualizar_vista()
+        self.guardar_componentes()
     
-    def aplicar_configuracion(self, dialog):
-        """Aplica la configuración"""
-        nuevo_nombre = self.txt_nombre_config.text().strip()
-        if nuevo_nombre:
-            self.nombre = nuevo_nombre
-            self.config["nombre"] = nuevo_nombre
-            self.campo_modificado.emit({"nombre": nuevo_nombre})
+    def guardar_componentes(self):
+        """Guarda componentes en config y emite señal"""
+        self.config['componentes'] = [comp.to_dict() for comp in self.componentes]
+        self.campo_modificado.emit({'componentes': self.config['componentes']})
+    
+    def get_texto_preview(self, datos_registro):
+        """Genera texto para modo preview"""
+        texto = ""
+        for componente in self.componentes:
+            if componente.tipo == 'texto':
+                texto += componente.valor
+            else:
+                texto += str(datos_registro.get(componente.valor, ''))
+        return texto
+    
+    # Heredamos los métodos de física de CampoSimpleWidget
+    # (Para evitar duplicación, en la implementación real
+    # CampoCompuestoWidget heredaría de una clase base)
+    
+    def setup_fisica(self):
+        """Configuración similar a CampoSimpleWidget"""
+        self.drag_pos = None
+        self.is_dragging = False
+        self.is_resizing = False
+        self.setMouseTracking(True)
+    
+    def mousePressEvent(self, event: QMouseEvent):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.is_dragging = True
+            self.drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            self.setCursor(Qt.CursorShape.ClosedHandCursor)
+            self.campo_seleccionado.emit(self)
+    
+    def mouseMoveEvent(self, event: QMouseEvent):
+        if self.is_dragging and event.buttons() & Qt.MouseButton.LeftButton:
+            new_pos = event.globalPosition().toPoint() - self.drag_pos
+            self.move_within_bounds(new_pos)
+    
+    def move_within_bounds(self, new_pos):
+        parent = self.parent()
+        if parent:
+            max_x = parent.width() - self.width()
+            max_y = parent.height() - self.height()
+            
+            new_pos.setX(max(0, min(new_pos.x(), max_x)))
+            new_pos.setY(max(0, min(new_pos.y(), max_y)))
         
-        dialog.accept()
+        self.move(new_pos)
+        
+        if parent and hasattr(parent, 'escala'):
+            self.config['x'] = new_pos.x() / parent.escala
+            self.config['y'] = new_pos.y() / parent.escala
+            self.campo_modificado.emit({'x': self.config['x'], 'y': self.config['y']})
     
-    def eliminar_campo(self):
-        """Emitir señal para eliminar este campo"""
-        self.solicita_eliminar.emit(self)
+    def mouseReleaseEvent(self, event: QMouseEvent):
+        self.is_dragging = False
+        self.setCursor(Qt.CursorShape.ArrowCursor)
     
-    def actualizar_estilo(self):
-        """Actualiza el estilo visual"""
-        pass  # El estilo se maneja en actualizar_vista()
+    def paintEvent(self, event):
+        """Dibuja borde de selección"""
+        super().paintEvent(event)
+        
+        if self.config.get('seleccionado', False):
+            painter = QPainter(self)
+            painter.setPen(QPen(QColor(255, 0, 0), 2, Qt.PenStyle.DashLine))
+            painter.drawRect(1, 1, self.width() - 2, self.height() - 2)
     
     def set_seleccionado(self, seleccionado: bool):
-        """Marca/desmarca como seleccionado"""
-        self.seleccionado = seleccionado
-        if seleccionado:
-            self.setCursor(Qt.CursorShape.SizeAllCursor)
-        else:
-            self.setCursor(Qt.CursorShape.ArrowCursor)
+        self.config['seleccionado'] = seleccionado
         self.update()
+    
+    def actualizar_estilo(self):
+        """Estilo base del widget"""
+        if self.config.get('seleccionado', False):
+            self.setStyleSheet("""
+                CampoCompuestoWidget {
+                    background-color: rgba(255, 255, 200, 0.1);
+                    border: 1px dashed #ff0000;
+                }
+            """)
+        else:
+            self.setStyleSheet("")

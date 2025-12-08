@@ -7,10 +7,10 @@ from utils.logger import auditoria
 
 # Importar módulos nuevos
 from ui.modules.proyectos.dashboard_proyectos import DashboardProyectos
-from ui.modules.plantillas.dashboard_plantillas import DashboardPlantillas
+from ui.modules.plantillas.dashboard_plantillas import DashboardPlantillasMejorado
 from ui.modules.estadisticas.dashboard_estadisticas import DashboardEstadisticas
 from ui.modules.configuracion.panel_configuracion import PanelConfiguracion
-from ui.modules.plantillas.dashboard_mejorado import DashboardPlantillasMejorado
+from ui.modules.plantillas.dashboard_plantillas import DashboardPlantillasMejorado
 
 class MainWindow(QMainWindow):
     def __init__(self, usuario: Usuario):

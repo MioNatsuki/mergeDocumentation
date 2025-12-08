@@ -73,7 +73,6 @@ class Plantilla(Base):
     descripcion = Column(Text)
     ruta_archivo = Column(String(255))
     tipo_plantilla = Column(String(20))
-    campos_json = Column(JSON)
     activa = Column(Boolean, default=True)
     fecha_creacion = Column(DateTime(timezone=True), server_default=func.now())
     usuario_creador = Column(Integer, ForeignKey("usuarios.id"))
@@ -155,3 +154,46 @@ class ConfiguracionSistema(Base):
     tipo = Column(String(20))
     descripcion = Column(Text)
     editable = Column(Boolean, default=True)
+
+class CampoPlantilla(Base):
+    """Modelo NUEVO y LIMPIO para campos de plantilla"""
+    __tablename__ = "campos_plantilla"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    plantilla_id = Column(Integer, ForeignKey("plantillas.id"), nullable=False)
+    
+    # Datos básicos
+    nombre = Column(String(100), nullable=False)
+    tipo = Column(String(20), nullable=False)  # 'texto', 'campo', 'compuesto', 'tabla'
+    
+    # Posición y tamaño (EN MILÍMETROS)
+    x = Column(Numeric(10, 2), nullable=False)  # mm desde izquierda
+    y = Column(Numeric(10, 2), nullable=False)  # mm desde arriba
+    ancho = Column(Numeric(10, 2), nullable=False)  # mm
+    alto = Column(Numeric(10, 2), nullable=False)  # mm
+    
+    # Estilo
+    alineacion = Column(String(10), default='left')  # 'left', 'center', 'right', 'justify'
+    fuente = Column(String(50), default='Helvetica')
+    tamano_fuente = Column(Integer, default=12)
+    color = Column(String(7), default='#000000')  # Hex color
+    negrita = Column(Boolean, default=False)
+    cursiva = Column(Boolean, default=False)
+    
+    # Para campos simples
+    texto_fijo = Column(Text)  # Si tipo='texto'
+    columna_padron = Column(String(100))  # Si tipo='campo'
+    
+    # Para campos compuestos (JSON estructurado)
+    componentes_json = Column(JSON)  # Ej: [{"tipo":"texto","valor":"Domicilio: "},{"tipo":"campo","columna":"calle"}]
+    
+    # Para tablas
+    tabla_config_json = Column(JSON)  # Ej: {"columnas":3,"filas":5,"encabezado":true,"celdas":[...]}
+    
+    # Metadata
+    orden = Column(Integer, default=0)  # Para z-order
+    activo = Column(Boolean, default=True)
+    fecha_creacion = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relación
+    plantilla = relationship("Plantilla", backref="campos")

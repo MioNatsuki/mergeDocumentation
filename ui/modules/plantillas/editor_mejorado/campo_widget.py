@@ -289,6 +289,13 @@ class CampoTextoWidget(QFrame):
             color_texto = "#0066cc"  # Azul cuando tiene columna
         else:
             color_texto = "#666666"  # Gris cuando no tiene
+       
+        alineacion_css = {
+            "left": "left",
+            "center": "center",
+            "right": "right",
+            "justify": "justify"
+        }.get(self.config.get("alineacion", "left"), "left")
         
         estilo = f"""
             QLabel {{
@@ -298,6 +305,7 @@ class CampoTextoWidget(QFrame):
                 font-size: {self.config['tamano']}pt;
                 font-weight: {'bold' if self.config['negrita'] else 'normal'};
                 font-style: {'italic' if self.config['cursiva'] else 'normal'};
+                text-align: {alineacion_css};
                 border: {borde_label};
                 padding: 2px;
             }}
@@ -305,11 +313,24 @@ class CampoTextoWidget(QFrame):
         self.label.setStyleSheet(estilo)
     
     def set_seleccionado(self, seleccionado: bool):
-        """Marca/desmarca como seleccionado"""
+        """Marca/desmarca como seleccionado - MEJORADO"""
         self.seleccionado = seleccionado
         self.actualizar_estilo()
+        
+        # Destacar más cuando está seleccionado
         if seleccionado:
             self.setCursor(Qt.CursorShape.SizeAllCursor)
+            # Añadir efecto de sombra o resaltado
+            self.setStyleSheet(f"""
+                CampoTextoWidget {{
+                    background-color: rgba(173, 216, 230, 0.1);
+                    border: 2px dashed #ff0000;
+                }}
+            """)
         else:
             self.setCursor(Qt.CursorShape.ArrowCursor)
+            # Quitar efectos
+            self.setStyleSheet("")
+        
         self.update()
+        self.raise_()  # Traer al frente

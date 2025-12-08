@@ -523,6 +523,13 @@ class EditorVisual(QWidget):
         layout.addWidget(splitter)
         self.setLayout(layout)
         self.resize(1400, 900)  # Ventana más grande
+
+        self.btn_compuesto = QPushButton("🧩 Compuesto")
+        self.btn_compuesto.setCheckable(True)
+        self.btn_compuesto.clicked.connect(self.activar_modo_compuesto)
+        layout_toolbar.addWidget(self.btn_compuesto)
+
+        self.botones_modo.append(self.btn_compuesto)
         
         # Establecer modo selección por defecto
         QTimer.singleShot(100, self.preview_pdf.activar_modo_seleccion)
@@ -531,6 +538,31 @@ class EditorVisual(QWidget):
         """Carga un PDF en el visor"""
         self.pdf_path = pdf_path
         self.preview_pdf.cargar_pdf(pdf_path)
+
+    def activar_modo_compuesto(self):
+        """Activa modo agregar campo compuesto"""
+        self.cambiar_modo("agregar_compuesto")
+        self.actualizar_botones_modo(self.btn_compuesto)
+
+    def cambiar_modo(self, modo: str):
+        """Cambia el modo de interacción - ACTUALIZADO"""
+        self.modo_actual = modo
+        if modo == "seleccion":
+            self.lbl_modo.setText("Modo: Selección")
+            self.lbl_imagen.setCursor(Qt.CursorShape.ArrowCursor)
+            self.barra_estado.setText("🖱️ Haz clic para seleccionar campos")
+        elif modo == "agregar_texto":
+            self.lbl_modo.setText("Modo: Agregar Texto")
+            self.lbl_imagen.setCursor(Qt.CursorShape.CrossCursor)
+            self.barra_estado.setText("➕ Haz clic en el PDF para agregar un campo de texto")
+        elif modo == "agregar_compuesto":
+            self.lbl_modo.setText("Modo: Agregar Compuesto")
+            self.lbl_imagen.setCursor(Qt.CursorShape.CrossCursor)
+            self.barra_estado.setText("🧩 Haz clic en el PDF para agregar un campo compuesto")
+        elif modo == "agregar_tabla":
+            self.lbl_modo.setText("Modo: Agregar Tabla")
+            self.lbl_imagen.setCursor(Qt.CursorShape.CrossCursor)
+            self.barra_estado.setText("📊 Haz clic en el PDF para agregar una tabla")
     
     def cargar_plantilla_existente(self):
         """Carga una plantilla existente para edición"""
@@ -597,49 +629,47 @@ class EditorVisual(QWidget):
             self.cargar_pdf(file_path)
     
     def agregar_campo_desde_click(self, tipo_campo: str, x_mm: float, y_mm: float):
-        """Agrega un campo desde el clic en el PDF"""
+        """Agrega un campo desde el clic en el PDF - ACTUALIZADO"""
         if tipo_campo == "texto":
-            # Crear campo de texto simple
             campo = CampoTextoWidget("Nuevo Texto", "texto", self.preview_pdf.lbl_imagen)
             campo.config["x"] = x_mm
             campo.config["y"] = y_mm
             
-            # Conectar señales
-            campo.campo_seleccionado.connect(self.seleccionar_campo)
-            campo.campo_modificado.connect(self.on_campo_modificado)
-            campo.solicita_eliminar.connect(self.eliminar_campo)
-            
-            # Agregar visualmente
-            self.preview_pdf.agregar_campo_visual(campo, x_mm, y_mm)
-            self.campos.append(campo)
-            
-            # Mostrar en panel de propiedades
-            self.panel_propiedades.mostrar_campo(campo)
+        elif tipo_campo == "compuesto":
+            # Agregar campo compuesto
+            from ui.modules.plantillas.editor_mejorado.campo_compuesto import CampoCompuestoWidget
+            campo = CampoCompuestoWidget("Campo Compuesto", self.preview_pdf.lbl_imagen)
+            campo.config["x"] = x_mm
+            campo.config["y"] = y_mm
             
         elif tipo_campo == "tabla":
-            # Abrir diálogo de configuración primero
+            # Abrir diálogo de configuración
             dialog = DialogoConfigTabla()
             if dialog.exec():
                 config = dialog.get_configuracion()
                 campo = CampoTablaWidget(config, self.preview_pdf.lbl_imagen)
                 campo.config["x"] = x_mm
                 campo.config["y"] = y_mm
-                campo.config["ancho"] = config["columnas"] * 80  # Ancho basado en columnas
-                campo.config["alto"] = config["filas"] * 30 + 30  # Alto basado en filas
-                
-                # Conectar señales
-                campo.campo_seleccionado.connect(self.seleccionar_campo)
-                campo.campo_modificado.connect(self.on_campo_modificado)
-                campo.solicita_eliminar.connect(self.eliminar_campo)
-                
-                # Agregar visualmente
-                self.preview_pdf.agregar_campo_visual(campo, x_mm, y_mm)
-                self.campos.append(campo)
-                
-                # Mostrar en panel de propiedades
-                self.panel_propiedades.mostrar_campo(campo)
+                # Ajustar tamaño según configuración
+                campo.config["ancho"] = config["columnas"] * 80
+                campo.config["alto"] = config["filas"] * 30 + (30 if config["encabezado"] else 10)
             else:
                 return  # Usuario canceló
+        
+        else:
+            return
+        
+        # Configuración común para todos los campos
+        campo.campo_seleccionado.connect(self.seleccionar_campo)
+        campo.campo_modificado.connect(self.on_campo_modificado)
+        campo.solicita_eliminar.connect(self.eliminar_campo)
+        
+        # Agregar visualmente
+        self.preview_pdf.agregar_campo_visual(campo, x_mm, y_mm)
+        self.campos.append(campo)
+        
+        # Mostrar en panel de propiedades
+        self.panel_propiedades.mostrar_campo(campo)
     
     def seleccionar_campo(self, campo):
         """Selecciona un campo"""

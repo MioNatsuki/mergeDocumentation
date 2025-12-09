@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QLineEdit,
                              QFormLayout, QGroupBox, QColorDialog, QHBoxLayout,
                              QFrame, QScrollArea, QFontDialog)
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QFont, QColor
+from PyQt6.QtGui import QFont, QColor, QIcon
 import traceback
 
 class PanelPropiedades(QFrame):
@@ -152,8 +152,18 @@ class PanelPropiedades(QFrame):
         # ALINEACIÓN COMPLETA - 4 OPCIONES
         self.combo_alineacion = QComboBox()
         self.combo_alineacion.addItems(['left', 'center', 'right', 'justify'])
-        self.combo_alineacion.currentTextChanged.connect(self.actualizar_cambios)
-        form_estilo.addRow("Alineación:", self.combo_alineacion)
+        self.combo_alineacion.setToolTip(
+            "left = Izquierda\n"
+            "center = Centrado\n"
+            "right = Derecha\n"
+            "justify = Justificado (sólo para párrafos largos)"
+        )
+
+        from PyQt6.QtGui import QIcon
+        self.combo_alineacion.setItemIcon(0, self.crear_icono_alineacion('left'))
+        self.combo_alineacion.setItemIcon(1, self.crear_icono_alineacion('center'))
+        self.combo_alineacion.setItemIcon(2, self.crear_icono_alineacion('right'))
+        self.combo_alineacion.setItemIcon(3, self.crear_icono_alineacion('justify'))
         
         # Tamaño de fuente
         self.spin_tamano = QSpinBox()
@@ -218,6 +228,39 @@ class PanelPropiedades(QFrame):
         self.setLayout(layout)
         self.setMinimumWidth(250)
     
+    def crear_icono_alineacion(self, tipo: str):
+        """Crea icono visual para tipo de alineación"""
+        from PyQt6.QtGui import QPixmap, QPainter, QColor
+        pixmap = QPixmap(16, 16)
+        pixmap.fill(QColor(0, 0, 0, 0))
+        
+        painter = QPainter(pixmap)
+        painter.setPen(QColor(0, 0, 0))
+        
+        if tipo == 'left':
+            # Líneas alineadas a la izquierda
+            for i in range(3):
+                length = 8 + i * 2
+                painter.drawLine(2, 4 + i*4, 2 + length, 4 + i*4)
+        elif tipo == 'center':
+            # Líneas centradas
+            for i in range(3):
+                length = 8 + i * 2
+                start = (16 - length) // 2
+                painter.drawLine(start, 4 + i*4, start + length, 4 + i*4)
+        elif tipo == 'right':
+            # Líneas alineadas a la derecha
+            for i in range(3):
+                length = 8 + i * 2
+                painter.drawLine(16 - 2 - length, 4 + i*4, 16 - 2, 4 + i*4)
+        else:  # justify
+            # Líneas de ancho completo
+            for i in range(3):
+                painter.drawLine(2, 4 + i*4, 14, 4 + i*4)
+        
+        painter.end()
+        return QIcon(pixmap)
+
     def cargar_columnas_reales(self):
         """Carga columnas del padrón desde la base de datos"""
         try:

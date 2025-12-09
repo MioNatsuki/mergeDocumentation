@@ -11,6 +11,8 @@ import json
 import os
 import traceback
 from typing import List, Dict, Optional
+from core.pdf_generator import PDFGenerator
+import tempfile
 
 # Importar componentes
 from ui.modules.plantillas.editor_mejorado.campo_widget import CampoSimpleWidget
@@ -30,7 +32,7 @@ class EditorPlantillas(QWidget):
     plantilla_guardada = pyqtSignal(dict)
     
     def __init__(self, usuario, proyecto_id, pdf_path=None, stacked_widget=None, plantilla_id=None):
-        super().__init__()
+        super().__init__() 
         self.usuario = usuario
         self.proyecto_id = proyecto_id
         self.pdf_path = pdf_path
@@ -136,15 +138,55 @@ class EditorPlantillas(QWidget):
         self.btn_cargar_datos = QPushButton("📊 Cargar datos preview")
         self.btn_cargar_datos.clicked.connect(self.cargar_datos_preview)
         
+        # AHORA SÍ podemos configurar el tooltip (el botón ya existe)
+        self.btn_cargar_datos.setToolTip("Cargar datos para vista previa\n(Ctrl+R para recargar)")
+        
         self.btn_guardar = QPushButton("💾 Guardar")
         self.btn_guardar.clicked.connect(self.guardar_plantilla)
         self.btn_guardar.setStyleSheet("background-color: #27ae60;")
         
         self.btn_salir = QPushButton("🚪 Salir")
-        self.btn_salir.clicked.connect(self.salir_editor)  # <-- ¡CORREGIDO! salir -> salir_editor
+        self.btn_salir.clicked.connect(self.salir_editor)
         self.btn_salir.setStyleSheet("background-color: #e74c3c;")
         
+        self.btn_deseleccionar = QPushButton("❌ Deseleccionar")
+        self.btn_deseleccionar.clicked.connect(self.deseleccionar_todo)
+        self.btn_deseleccionar.setToolTip("Deseleccionar todos los campos")
+        self.btn_deseleccionar.setStyleSheet("""
+            QPushButton {
+                background-color: #ff4444;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 5px 10px;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background-color: #cc0000;
+            }
+        """)
+        
+        self.btn_test_pdf = QPushButton("🔄 Probar PDF")
+        self.btn_test_pdf.clicked.connect(self.probar_generacion_pdf)
+        self.btn_test_pdf.setToolTip("Generar PDF de prueba con datos actuales")
+        self.btn_test_pdf.setStyleSheet("""
+            QPushButton {
+                background-color: #9C27B0;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 5px 10px;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background-color: #7B1FA2;
+            }
+        """)
+        
+        # Agregar botones en orden
+        toolbar_layout.addWidget(self.btn_deseleccionar)
         toolbar_layout.addWidget(self.btn_cargar_datos)
+        toolbar_layout.addWidget(self.btn_test_pdf)  # Mover aquí
         toolbar_layout.addWidget(self.btn_guardar)
         toolbar_layout.addWidget(self.btn_salir)
         
@@ -171,6 +213,13 @@ class EditorPlantillas(QWidget):
         self.setLayout(layout)
         self.resize(1400, 900)
     
+    def deseleccionar_todo(self):
+        """Deselecciona todos los campos"""
+        if hasattr(self.preview_pdf, 'deseleccionar_todos_los_campos'):
+            self.preview_pdf.deseleccionar_todos_los_campos()
+            self.panel_propiedades.mostrar_campo(None)  # Limpiar panel
+            self.actualizar_barra_estado("🗹 Todos los campos deseleccionados")
+
     def cambiar_modo(self, modo: str):
         """Cambia el modo actual y establece tipo de campo a agregar"""
         for btn in self.botones_modo:
@@ -184,58 +233,58 @@ class EditorPlantillas(QWidget):
             'agregar_tabla': 'tabla'
         }
         
-        self.tipo_campo_a_agregar = modo_a_tipo.get(modo)
+        tipo_campo = modo_a_tipo.get(modo)
         
         if modo == 'seleccion':
             self.btn_seleccion.setChecked(True)
-            self.preview_pdf.cambiar_modo('seleccion')
-            self.barra_estado("👆 Modo selección - Selecciona campos")
-        elif modo == 'agregar_texto':
-            self.btn_texto.setChecked(True)
-            self.preview_pdf.cambiar_modo('agregar_campo')
-            self.barra_estado("➕ Modo agregar texto - Haz clic en el PDF")
-        elif modo == 'agregar_compuesto':
-            self.btn_compuesto.setChecked(True)
-            self.preview_pdf.cambiar_modo('agregar_campo')
-            self.barra_estado("🧩 Modo agregar compuesto - Haz clic en el PDF")
-        elif modo == 'agregar_tabla':
-            self.btn_tabla.setChecked(True)
-            self.preview_pdf.cambiar_modo('agregar_campo')
-            self.barra_estado("📊 Modo agregar tabla - Haz clic en el PDF")
+            # Volver a modo selección en preview
+            if hasattr(self.preview_pdf, 'cambiar_modo_agregar'):
+                self.preview_pdf.cambiar_modo_agregar(None)
+            self.actualizar_barra_estado("👆 Modo selección - Selecciona campos")
+            
+        elif tipo_campo:  # agregar_texto, agregar_compuesto, agregar_tabla
+            # Activar el botón correspondiente
+            if modo == 'agregar_texto':
+                self.btn_texto.setChecked(True)
+                mensaje = "➕ Modo agregar texto - Haz clic en el PDF"
+            elif modo == 'agregar_compuesto':
+                self.btn_compuesto.setChecked(True)
+                mensaje = "🧩 Modo agregar compuesto - Haz clic en el PDF"
+            elif modo == 'agregar_tabla':
+                self.btn_tabla.setChecked(True)
+                mensaje = "📊 Modo agregar tabla - Haz clic en el PDF"
+            
+            # Establecer modo agregar en preview
+            if hasattr(self.preview_pdf, 'cambiar_modo_agregar'):
+                self.preview_pdf.cambiar_modo_agregar(tipo_campo)
+            
+            self.actualizar_barra_estado(mensaje)
+        
+        # Guardar tipo para referencia
+        self.tipo_campo_a_agregar = tipo_campo
     
     def actualizar_barra_estado(self, mensaje: str):
         """Actualiza la barra de estado del preview"""
-        if hasattr(self.preview_pdf, 'barra_estado'):
-            self.preview_pdf.barra_estado.setText(mensaje)
+        if hasattr(self.preview_pdf, 'actualizar_barra_estado'):
+            self.preview_pdf.actualizar_barra_estado.setText(mensaje)
 
     def cargar_datos_iniciales(self):
-        """Carga datos iniciales y total de registros del padrón"""
+        """Carga datos iniciales y configura preview"""
         db = SessionLocal()
         try:
             self.proyecto = db.query(Proyecto).filter(Proyecto.id == self.proyecto_id).first()
             if self.proyecto:
                 self.lbl_info.setText(f"Editor - {self.proyecto.nombre}")
                 
+                # ¡IMPORTANTE! Pasar proyecto_id al preview
+                self.preview_pdf.set_proyecto_id(self.proyecto_id)
+                
                 # Cargar columnas del padrón
                 if hasattr(self.panel_propiedades, 'cargar_columnas_reales'):
                     self.panel_propiedades.cargar_columnas_reales()
-                
-                # OBTENER TOTAL DE REGISTROS DEL PADRÓN
-                if self.proyecto.tabla_padron:
-                    padron_service = PadronService(db)
                     
-                    # Obtener el nombre real de la tabla
-                    identificador = padron_service.obtener_padron_por_uuid(self.proyecto.tabla_padron)
-                    if identificador and identificador.nombre_tabla:
-                        from sqlalchemy import text
-                        query = text(f"SELECT COUNT(*) as total FROM {identificador.nombre_tabla}")
-                        result = db.execute(query).fetchone()
-                        self.total_registros_padron = result[0] if result else 0
-                        print(f"📊 Total registros en padrón: {self.total_registros_padron}")
-                
         except Exception as e:
             print(f"Error cargando datos iniciales: {e}")
-            import traceback
             traceback.print_exc()
         finally:
             db.close()
@@ -252,66 +301,55 @@ class EditorPlantillas(QWidget):
             traceback.print_exc()
     
     def cargar_datos_preview(self):
-        """Carga datos REALES del padrón para vista previa"""
-        db = SessionLocal()
+        """Cambia a modo vista previa (carga datos automáticamente)"""
         try:
-            if not self.proyecto or not self.proyecto.tabla_padron:
-                QMessageBox.warning(self, "Sin padrón", 
-                                  "Este proyecto no tiene una tabla de padrón configurada")
+            # 1. Verificar que hay PDF cargado
+            if not self.pdf_path or not os.path.exists(self.pdf_path):
+                QMessageBox.warning(self, "Sin PDF", "Debes cargar un PDF primero")
                 return
             
-            # Obtener datos del padrón
-            padron_service = PadronService(db)
-            registros = padron_service.obtener_todos_registros(
-                self.proyecto.tabla_padron, 
-                limit=min(100, self.total_registros_padron)
-            )
+            # 2. Verificar que hay campos definidos
+            if not self.campos:
+                reply = QMessageBox.question(
+                    self, "Sin campos",
+                    "No has agregado ningún campo. ¿Ver vista previa de todos modos?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                )
+                if reply != QMessageBox.StandardButton.Yes:
+                    return
             
-            if not registros:
-                QMessageBox.information(self, "Sin datos", 
-                                      "No hay datos en el padrón. Usando datos de prueba...")
-                columnas = padron_service.obtener_columnas_padron(self.proyecto.tabla_padron)
-                registros = []
-                for i in range(min(10, self.total_registros_padron)):
-                    registro = {}
-                    for col in columnas[:8]:
-                        nombre = col['nombre']
-                        
-                        if 'nombre' in nombre.lower():
-                            valor = f"Nombre {i+1}"
-                        elif 'apellido' in nombre.lower():
-                            valor = f"Apellido {i+1}"
-                        elif 'direccion' in nombre.lower():
-                            valor = f"Calle {i+1} #123"
-                        elif 'telefono' in nombre.lower():
-                            valor = f"555-{1000+i}"
-                        elif 'email' in nombre.lower():
-                            valor = f"test{i+1}@ejemplo.com"
-                        elif 'fecha' in nombre.lower():
-                            valor = f"2024-01-{i+1:02d}"
-                        elif 'monto' in nombre.lower() or 'saldo' in nombre.lower():
-                            valor = f"${(i+1)*1000}"
-                        else:
-                            valor = f"Valor {i+1} - {nombre}"
-                        
-                        registro[nombre] = valor
-                    registros.append(registro)
+            # 3. Cambiar a modo selección (para evitar clics accidentales)
+            self.cambiar_modo('seleccion')
             
-            # Establecer datos en preview
-            self.preview_pdf.set_registros_preview(registros)
-            self.registros_preview = registros
+            # 4. Cambiar a modo vista previa (esto cargará datos automáticamente)
+            self.preview_pdf.cambiar_modo_vista('preview')
             
-            QMessageBox.information(self, "Datos cargados", 
-                                  f"Se cargaron {len(registros)} registros para vista previa\n"
-                                  f"Total en padrón: {self.total_registros_padron}")
+            # 5. Actualizar barra de estado
+            self.actualizar_barra_estado("👁️ Modo Vista Previa - Navega con los botones Anterior/Siguiente")
             
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error cargando datos: {str(e)}")
+            QMessageBox.critical(self, "Error", f"No se pudo cargar la vista previa: {str(e)}")
             import traceback
             traceback.print_exc()
-        finally:
-            db.close()
     
+    def keyPressEvent(self, event):
+        """Atajos de teclado para navegación rápida"""
+        if self.preview_pdf.modo_vista == 'preview':
+            # Teclas para navegar en vista previa
+            if event.key() == Qt.Key.Key_Left or event.key() == Qt.Key.Key_Up:
+                self.preview_pdf.anterior_registro()
+            elif event.key() == Qt.Key.Key_Right or event.key() == Qt.Key.Key_Down:
+                self.preview_pdf.siguiente_registro()
+            elif event.key() == Qt.Key.Key_Home:
+                self.preview_pdf.ir_a_registro(1)
+            elif event.key() == Qt.Key.Key_End:
+                if hasattr(self.preview_pdf, 'registros_reales'):
+                    self.preview_pdf.ir_a_registro(len(self.preview_pdf.registros_reales))
+            elif event.key() == Qt.Key.Key_R and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
+                self.preview_pdf.recargar_datos()
+        
+        super().keyPressEvent(event)
+
     def cargar_campos_existentes(self):
         """Carga campos existentes de una plantilla"""
         if not self.plantilla_id:
@@ -344,7 +382,7 @@ class EditorPlantillas(QWidget):
             db.close()
     
     def crear_campo_desde_db(self, campo_db):
-        """Crea un widget de campo desde registro de BD"""
+        """Crea un widget de campo desde registro de BD - CON COMPUESTOS"""
         try:
             config = {
                 'id': campo_db.id,
@@ -366,21 +404,15 @@ class EditorPlantillas(QWidget):
                 'tabla_config': campo_db.tabla_config_json or {}
             }
             
-            if campo_db.tipo == 'texto' or campo_db.tipo == 'campo':
-                from ui.modules.plantillas.editor_mejorado.campo_widget import CampoSimpleWidget
-                campo_widget = CampoSimpleWidget(config, self)
-                
-            elif campo_db.tipo == 'compuesto':
+            if campo_db.tipo == 'compuesto':
                 from ui.modules.plantillas.editor_mejorado.campo_compuesto import CampoCompuestoWidget
                 campo_widget = CampoCompuestoWidget(config, self)
-                
             elif campo_db.tipo == 'tabla':
                 from ui.modules.plantillas.editor_mejorado.tabla_widget import TablaWidget
                 campo_widget = TablaWidget(config, self)
-                
             else:
-                print(f"Tipo de campo desconocido: {campo_db.tipo}")
-                return
+                from ui.modules.plantillas.editor_mejorado.campo_widget import CampoSimpleWidget
+                campo_widget = CampoSimpleWidget(config, self)
             
             # Conectar señales
             campo_widget.campo_seleccionado.connect(self.on_campo_seleccionado)
@@ -392,19 +424,17 @@ class EditorPlantillas(QWidget):
             
         except Exception as e:
             print(f"Error creando campo desde DB: {str(e)}")
-            import traceback
-            traceback.print_exc()
     
     def agregar_campo_nuevo(self, tipo_campo: str, x_mm: float, y_mm: float):
-        """Agrega un nuevo campo al hacer clic en el PDF"""
+        """Agrega un nuevo campo - CON SOPORTE PARA COMPUESTOS"""
         try:
             config_base = {
                 'nombre': f'Nuevo {tipo_campo}',
                 'tipo': tipo_campo,
                 'x': x_mm,
                 'y': y_mm,
-                'ancho': 80.0 if tipo_campo != 'tabla' else 200.0,
-                'alto': 15.0 if tipo_campo != 'tabla' else 100.0,
+                'ancho': 150.0 if tipo_campo == 'compuesto' else 80.0,
+                'alto': 20.0 if tipo_campo == 'compuesto' else 15.0,
                 'alineacion': 'left',
                 'fuente': 'Arial',
                 'tamano_fuente': 12,
@@ -413,28 +443,26 @@ class EditorPlantillas(QWidget):
                 'cursiva': False
             }
             
-            if tipo_campo == 'texto':
+            if tipo_campo in ['texto', 'campo']:
                 from ui.modules.plantillas.editor_mejorado.campo_widget import CampoSimpleWidget
-                config_base['texto_fijo'] = 'Texto de ejemplo'
+                if tipo_campo == 'texto':
+                    config_base['texto_fijo'] = 'Texto de ejemplo'
+                else:
+                    config_base['columna_padron'] = ''
                 campo_widget = CampoSimpleWidget(config_base, self)
-                campo_widget.cambiar_tipo('texto')
-                
-            elif tipo_campo == 'campo':
-                from ui.modules.plantillas.editor_mejorado.campo_widget import CampoSimpleWidget
-                config_base['columna_padron'] = ''
-                campo_widget = CampoSimpleWidget(config_base, self)
-                campo_widget.cambiar_tipo('campo')
                 
             elif tipo_campo == 'compuesto':
                 from ui.modules.plantillas.editor_mejorado.campo_compuesto import CampoCompuestoWidget
                 campo_widget = CampoCompuestoWidget(config_base, self)
-                QTimer.singleShot(100, campo_widget.mostrar_dialogo_agregar)
+                
+                # Mostrar editor de componentes INMEDIATAMENTE
+                QTimer.singleShot(100, campo_widget.mostrar_editor_componentes)
                 
             elif tipo_campo == 'tabla':
                 from ui.modules.plantillas.editor_mejorado.tabla_widget import TablaWidget
                 campo_widget = TablaWidget(config_base, self)
                 QTimer.singleShot(100, campo_widget.configurar_tabla)
-                
+            
             else:
                 return
             
@@ -446,11 +474,11 @@ class EditorPlantillas(QWidget):
             # Agregar visualmente
             self.agregar_campo_visual(campo_widget)
             
+            print(f"✅ Campo {tipo_campo} agregado en ({x_mm:.1f}, {y_mm:.1f})")
+            
         except Exception as e:
             print(f"Error agregando campo: {str(e)}")
-            import traceback
             traceback.print_exc()
-            QMessageBox.critical(self, "Error", f"Error creando campo: {str(e)}")
     
     def agregar_campo_visual(self, campo_widget):
         """Agrega un campo visualmente al preview"""
@@ -604,6 +632,15 @@ class EditorPlantillas(QWidget):
                 f"• Campos: {len(self.campos)}\n"
                 f"• Registros padrón: {self.total_registros_padron}"
             )
+
+            reply = QMessageBox.question(
+            self, "Probar alineación",
+            "¿Deseas generar un PDF de prueba para verificar la alineación?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            
+            if reply == QMessageBox.StandardButton.Yes:
+                self.probar_generacion_pdf()
             
         except Exception as e:
             db.rollback()
@@ -627,3 +664,101 @@ class EditorPlantillas(QWidget):
         self.plantilla_guardada.emit({})
         if self.stacked_widget:
             self.stacked_widget.removeWidget(self)
+    
+    def probar_generacion_pdf(self):
+        """Genera un PDF de prueba para verificar alineación"""
+        if not self.campos:
+            QMessageBox.warning(self, "Sin campos", "Agrega campos primero")
+            return
+        
+        if not self.pdf_path:
+            QMessageBox.warning(self, "Sin PDF", "Carga un PDF base primero")
+            return
+        
+        # Obtener datos de prueba
+        datos_prueba = self.obtener_datos_prueba_para_pdf()
+        
+        # Preparar configuración de campos
+        config_campos = []
+        for campo in self.campos:
+            config_campos.append(campo.config.copy())
+        
+        # Generar PDF
+        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
+            output_path = tmp.name
+        
+        generador = PDFGenerator(self.pdf_path)
+        
+        if generador.generar_pdf_con_datos(config_campos, datos_prueba, output_path):
+            # Abrir el PDF generado
+            self.abrir_pdf_generado(output_path)
+            
+            # Mostrar mensaje
+            QMessageBox.information(
+                self, "✅ PDF Generado",
+                f"PDF de prueba generado exitosamente.\n\n"
+                f"Verifica que la alineación es correcta.\n"
+                f"Archivo: {os.path.basename(output_path)}"
+            )
+        else:
+            QMessageBox.critical(self, "❌ Error", "No se pudo generar el PDF")
+    
+    def obtener_datos_prueba_para_pdf(self):
+        """Obtiene datos de prueba para el PDF"""
+        datos = {}
+        
+        # Si hay vista previa activa, usar esos datos
+        if (hasattr(self.preview_pdf, 'registros_reales') and 
+            self.preview_pdf.registros_reales):
+            idx = self.preview_pdf.registro_actual_idx
+            if idx < len(self.preview_pdf.registros_reales):
+                datos = self.preview_pdf.registros_reales[idx].copy()
+        
+        # Si no hay datos, crear datos de prueba
+        if not datos:
+            for campo in self.campos:
+                if campo.config['tipo'] == 'campo':
+                    columna = campo.config.get('columna_padron', '')
+                    if columna:
+                        # Crear dato de prueba realista
+                        if 'nombre' in columna.lower():
+                            datos[columna] = "JUAN PÉREZ"
+                        elif 'apellido' in columna.lower():
+                            datos[columna] = "GONZÁLEZ"
+                        elif 'direccion' in columna.lower():
+                            datos[columna] = "AV. PRINCIPAL 123"
+                        elif 'dni' in columna.lower() or 'cedula' in columna.lower():
+                            datos[columna] = "12345678"
+                        elif 'telefono' in columna.lower():
+                            datos[columna] = "(555) 123-4567"
+                        elif 'email' in columna.lower():
+                            datos[columna] = "juan@ejemplo.com"
+                        elif 'monto' in columna.lower():
+                            datos[columna] = "$1,234.56"
+                        elif 'fecha' in columna.lower():
+                            datos[columna] = "15/03/2024"
+                        else:
+                            datos[columna] = f"Valor de prueba para {columna}"
+        
+        return datos
+    
+    def abrir_pdf_generado(self, pdf_path: str):
+        """Abre el PDF generado con el visor por defecto"""
+        try:
+            import platform
+            import subprocess
+            
+            if platform.system() == 'Windows':
+                os.startfile(pdf_path)
+            elif platform.system() == 'Darwin':  # macOS
+                subprocess.run(['open', pdf_path])
+            else:  # Linux
+                subprocess.run(['xdg-open', pdf_path])
+                
+        except Exception as e:
+            print(f"⚠️ No se pudo abrir el PDF: {e}")
+            # Mostrar ubicación
+            QMessageBox.information(
+                self, "Ubicación del PDF",
+                f"El PDF se guardó en:\n\n{pdf_path}"
+            )

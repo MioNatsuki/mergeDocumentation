@@ -59,7 +59,7 @@ class EditorPlantillas(QWidget):
             QTimer.singleShot(500, self.cargar_campos_existentes)
     
     def setup_ui(self):
-        """Configura UI simplificada"""
+        """Configura UI simplificada - VERSIÓN COMPLETA CORREGIDA"""
         self.setWindowTitle("🎨 Editor de Plantillas")
         
         layout = QVBoxLayout()
@@ -105,7 +105,7 @@ class EditorPlantillas(QWidget):
         # Info
         self.lbl_info = QLabel("Editor de Plantillas")
         
-        # Botones de MODO
+        # Botones de MODO - ¡IMPORTANTE! Conectar CORRECTAMENTE
         self.btn_seleccion = QPushButton("👆 Seleccionar")
         self.btn_seleccion.setCheckable(True)
         self.btn_seleccion.setChecked(True)
@@ -137,17 +137,7 @@ class EditorPlantillas(QWidget):
         # Botones de acción
         self.btn_cargar_datos = QPushButton("📊 Cargar datos preview")
         self.btn_cargar_datos.clicked.connect(self.cargar_datos_preview)
-        
-        # AHORA SÍ podemos configurar el tooltip (el botón ya existe)
         self.btn_cargar_datos.setToolTip("Cargar datos para vista previa\n(Ctrl+R para recargar)")
-        
-        self.btn_guardar = QPushButton("💾 Guardar")
-        self.btn_guardar.clicked.connect(self.guardar_plantilla)
-        self.btn_guardar.setStyleSheet("background-color: #27ae60;")
-        
-        self.btn_salir = QPushButton("🚪 Salir")
-        self.btn_salir.clicked.connect(self.salir_editor)
-        self.btn_salir.setStyleSheet("background-color: #e74c3c;")
         
         self.btn_deseleccionar = QPushButton("❌ Deseleccionar")
         self.btn_deseleccionar.clicked.connect(self.deseleccionar_todo)
@@ -183,10 +173,18 @@ class EditorPlantillas(QWidget):
             }
         """)
         
+        self.btn_guardar = QPushButton("💾 Guardar")
+        self.btn_guardar.clicked.connect(self.guardar_plantilla)
+        self.btn_guardar.setStyleSheet("background-color: #27ae60;")
+        
+        self.btn_salir = QPushButton("🚪 Salir")
+        self.btn_salir.clicked.connect(self.salir_editor)
+        self.btn_salir.setStyleSheet("background-color: #e74c3c;")
+        
         # Agregar botones en orden
         toolbar_layout.addWidget(self.btn_deseleccionar)
         toolbar_layout.addWidget(self.btn_cargar_datos)
-        toolbar_layout.addWidget(self.btn_test_pdf)  # Mover aquí
+        toolbar_layout.addWidget(self.btn_test_pdf)
         toolbar_layout.addWidget(self.btn_guardar)
         toolbar_layout.addWidget(self.btn_salir)
         
@@ -198,8 +196,14 @@ class EditorPlantillas(QWidget):
         
         # Panel central: Preview PDF (80%)
         self.preview_pdf = PreviewPDF()
+        
+        # ¡CRÍTICO! Conectar señales del preview
         self.preview_pdf.solicita_agregar_campo.connect(self.agregar_campo_nuevo)
         self.preview_pdf.campo_seleccionado.connect(self.on_campo_seleccionado)
+        
+        # ¡CRÍTICO! Pasar proyecto_id al preview
+        self.preview_pdf.set_proyecto_id(self.proyecto_id)
+        
         splitter_principal.addWidget(self.preview_pdf)
         
         # Panel derecho: Propiedades (20%)
@@ -212,6 +216,12 @@ class EditorPlantillas(QWidget):
         
         self.setLayout(layout)
         self.resize(1400, 900)
+        
+        # DEBUG: Verificar conexiones
+        print("✅ UI Configurada")
+        print(f"   Preview conectado: {self.preview_pdf}")
+        print(f"   Señal 'solicita_agregar_campo' conectada: {self.preview_pdf.receivers(self.preview_pdf.solicita_agregar_campo) > 0}")
+        print(f"   Proyecto ID pasado: {self.proyecto_id}")
     
     def deseleccionar_todo(self):
         """Deselecciona todos los campos"""
@@ -221,7 +231,10 @@ class EditorPlantillas(QWidget):
             self.actualizar_barra_estado("🗹 Todos los campos deseleccionados")
 
     def cambiar_modo(self, modo: str):
-        """Cambia el modo actual y establece tipo de campo a agregar"""
+        """Cambia el modo actual y establece tipo de campo a agregar - VERSIÓN CORREGIDA"""
+        print(f"\n🔄 CAMBIANDO MODO: {modo}")
+        
+        # Deseleccionar todos los botones primero
         for btn in self.botones_modo:
             btn.setChecked(False)
         
@@ -234,34 +247,40 @@ class EditorPlantillas(QWidget):
         }
         
         tipo_campo = modo_a_tipo.get(modo)
+        print(f"  Tipo de campo a agregar: {tipo_campo}")
         
         if modo == 'seleccion':
             self.btn_seleccion.setChecked(True)
+            self.modo = 'seleccion'
+            self.tipo_campo_a_agregar = None
+            
             # Volver a modo selección en preview
             if hasattr(self.preview_pdf, 'cambiar_modo_agregar'):
                 self.preview_pdf.cambiar_modo_agregar(None)
-            self.actualizar_barra_estado("👆 Modo selección - Selecciona campos")
+            self.actualizar_barra_estado("👆 Modo selección - Selecciona campos existentes")
             
         elif tipo_campo:  # agregar_texto, agregar_compuesto, agregar_tabla
             # Activar el botón correspondiente
             if modo == 'agregar_texto':
                 self.btn_texto.setChecked(True)
-                mensaje = "➕ Modo agregar texto - Haz clic en el PDF"
+                mensaje = "➕ Modo agregar TEXTO - Haz clic en el PDF"
             elif modo == 'agregar_compuesto':
                 self.btn_compuesto.setChecked(True)
-                mensaje = "🧩 Modo agregar compuesto - Haz clic en el PDF"
+                mensaje = "🧩 Modo agregar TEXTO COMPUESTO - Haz clic en el PDF"
             elif modo == 'agregar_tabla':
                 self.btn_tabla.setChecked(True)
-                mensaje = "📊 Modo agregar tabla - Haz clic en el PDF"
+                mensaje = "📊 Modo agregar TABLA - Haz clic en el PDF"
+            
+            # IMPORTANTE: Cambiar modo EN EL PREVIEW también
+            self.modo = 'agregar_campo'
+            self.tipo_campo_a_agregar = tipo_campo
             
             # Establecer modo agregar en preview
             if hasattr(self.preview_pdf, 'cambiar_modo_agregar'):
                 self.preview_pdf.cambiar_modo_agregar(tipo_campo)
+                self.preview_pdf.tipo_campo_a_agregar = tipo_campo  # ← ¡CRÍTICO!
             
             self.actualizar_barra_estado(mensaje)
-        
-        # Guardar tipo para referencia
-        self.tipo_campo_a_agregar = tipo_campo
     
     def actualizar_barra_estado(self, mensaje: str):
         """Actualiza la barra de estado del preview"""

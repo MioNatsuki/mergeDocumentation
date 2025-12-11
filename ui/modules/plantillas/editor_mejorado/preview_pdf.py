@@ -478,40 +478,55 @@ class PreviewPDF(QFrame):
                     campo.set_seleccionado(False)
 
     def on_click_pagina(self, event: QMouseEvent, pagina_num: int):
-        """Maneja clic en la página - VERSIÓN CORREGIDA"""
+        """Maneja clic en la página - VERSIÓN CORREGIDA Y FUNCIONAL"""
         lbl_imagen = self.sender()
         if not lbl_imagen:
             return
         
         pos = event.pos()
-        clickeo_en_campo = False
+        
+        # DEBUG IMPORTANTE
+        print(f"\n🔍 DEBUG CLICK:")
+        print(f"  - Modo actual: '{self.modo}'")
+        print(f"  - Tipo campo a agregar: '{getattr(self, 'tipo_campo_a_agregar', 'NO DEFINIDO')}'")
+        print(f"  - Modo vista: '{self.modo_vista}'")
+        print(f"  - Posición: ({pos.x()}, {pos.y()})")
         
         # 1. Verificar si se clickeó en un campo existente
+        clickeo_en_campo = False
         for campo in self.campos:
-            if campo.geometry().contains(pos) and campo.isVisible():
-                self.seleccionar_campo(campo)
-                clickeo_en_campo = True
-                break
+            try:
+                if campo.geometry().contains(pos) and campo.isVisible():
+                    self.seleccionar_campo(campo)
+                    clickeo_en_campo = True
+                    print(f"  ✅ Click en campo existente: {campo.config.get('nombre', 'sin nombre')}")
+                    break
+            except Exception as e:
+                continue
         
-        # 2. Si NO se clickeó en campo y estamos en modo 'agregar_campo'
-        if not clickeo_en_campo and self.modo == 'agregar_campo' and self.modo_vista == 'plantilla':
-            # Convertir coordenadas a mm
-            x_mm = pos.x() / lbl_imagen.escala
-            y_mm = pos.y() / lbl_imagen.escala
-            
-            print(f"📍 Click en ({x_mm:.1f}, {y_mm:.1f}) mm - Modo: {self.modo}, Tipo: {getattr(self, 'tipo_campo_a_agregar', 'N/A')}")
-            
-            # Si tenemos tipo de campo a agregar, emitir señal
-            if hasattr(self, 'tipo_campo_a_agregar') and self.tipo_campo_a_agregar:
+        # 2. Si NO se clickeó en campo y estamos en MODO AGREGAR
+        if not clickeo_en_campo and hasattr(self, 'tipo_campo_a_agregar') and self.tipo_campo_a_agregar:
+            if self.modo_vista == 'plantilla':  # SÓLO en modo plantilla podemos agregar
+                # Convertir coordenadas a mm
+                x_mm = pos.x() / lbl_imagen.escala
+                y_mm = pos.y() / lbl_imagen.escala
+                
+                print(f"  🎯 AGREGANDO NUEVO CAMPO:")
+                print(f"     Tipo: {self.tipo_campo_a_agregar}")
+                print(f"     Posición: ({x_mm:.1f}mm, {y_mm:.1f}mm)")
+                
+                # ¡EMITIR SEÑAL PARA AGREGAR CAMPO!
                 self.solicita_agregar_campo.emit(self.tipo_campo_a_agregar, x_mm, y_mm)
                 
                 # Volver a modo selección automáticamente
                 self.cambiar_modo_agregar(None)
+                print(f"  🔄 Volviendo a modo selección")
             else:
-                print("⚠️ No hay tipo_campo_a_agregar definido")
+                print(f"  ⚠️ Modo vista previa - No se puede agregar campos")
         
         # 3. Si se clickeó fuera de campos y NO estamos en modo agregar, deseleccionar
-        elif not clickeo_en_campo and self.modo != 'agregar_campo':
+        elif not clickeo_en_campo and not getattr(self, 'tipo_campo_a_agregar', None):
+            print(f"  🖱️ Click fuera de campos - Deseleccionando")
             self.deseleccionar_todos_los_campos()
     
     def on_mouse_move_pagina(self, event: QMouseEvent):

@@ -13,15 +13,16 @@ from typing import Dict, List, Optional
 import traceback
 from reportlab.platypus import Table, TableStyle
 from reportlab.lib import colors
-from reportlab.lib.units import mm
 import math
+from reportlab.lib.units import mm, inch
 
+OFICIO_MEXICO = (215.9*mm, 340.1*mm)
 class PDFGenerator:
     """Genera PDFs REALES con campos dinámicos y ALINEACIÓN"""
     
-    def __init__(self, pdf_template_path: str):
+    def __init__(self, pdf_template_path: str, page_size=OFICIO_MEXICO):
         self.pdf_template_path = pdf_template_path
-        self.page_size = A4  # 210x297 mm
+        self.page_size = page_size  # 210x297 mm
         
         # Registrar fuentes comunes (si existen)
         self._register_fonts()

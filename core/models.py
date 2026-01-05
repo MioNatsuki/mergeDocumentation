@@ -1,9 +1,8 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, JSON, ForeignKey, Numeric, Date
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, JSON, ForeignKey, Numeric
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from config.database import Base
 import bcrypt
-import uuid
 
 class Usuario(Base):
     __tablename__ = "usuarios"
@@ -13,13 +12,20 @@ class Usuario(Base):
     nombre = Column(String(100), nullable=False)
     usuario = Column(String(50), unique=True, index=True, nullable=False)
     contraseña_hash = Column(String(255), nullable=False)
-    rol = Column(String(20), nullable=False)
+    
+    rol = Column(
+        String(20), 
+        nullable=False, 
+        default='auxiliar',  # Por defecto el rol menos privilegiado
+        server_default='auxiliar'  # También a nivel de BD
+    )  # Valores: 'superadmin', 'analista', 'auxiliar'
+    
     activo = Column(Boolean, default=True)
     fecha_creacion = Column(DateTime(timezone=True), server_default=func.now())
     ultimo_login = Column(DateTime(timezone=True))
+
     proyecto_permitido = Column(String(200))
     
-    # Relaciones
     bitacoras = relationship("Bitacora", back_populates="usuario")
 
     def set_password(self, password):
@@ -34,8 +40,45 @@ class Usuario(Base):
         except Exception:
             return False
     
-    def __repr__(self):
-        return f"<Usuario(id={self.id}, usuario='{self.usuario}', rol='{self.rol}')>"
+    def puede_acceder_proyecto(self, proyecto_id: int) -> bool:
+        """Verifica si el usuario puede acceder a un proyecto específico"""
+        if self.rol == 'superadmin':
+            return True
+        
+        if not self.proyecto_permitido:
+            return False
+        
+        # Para analista/auxiliar: proyecto_permitido debe contener el ID del proyecto
+        try:
+            # Puede ser un solo ID o una lista separada por comas
+            proyectos_permitidos = [int(p.strip()) for p in self.proyecto_permitido.split(',') if p.strip().isdigit()]
+            return proyecto_id in proyectos_permitidos
+        except:
+            return False
+    
+    def puede_crear_proyectos(self) -> bool:
+        """Verifica si puede crear proyectos"""
+        return self.rol == 'superadmin'
+    
+    def puede_editar_proyectos(self) -> bool:
+        """Verifica si puede editar proyectos"""
+        return self.rol in ['superadmin', 'analista']
+    
+    def puede_eliminar_proyectos(self) -> bool:
+        """Verifica si puede eliminar proyectos (soft delete)"""
+        return self.rol == 'superadmin'
+    
+    def puede_gestionar_plantillas(self) -> bool:
+        """Verifica si puede crear/editar plantillas"""
+        return self.rol in ['superadmin', 'analista']
+    
+    def puede_ver_estadisticas_globales(self) -> bool:
+        """Verifica si puede ver estadísticas de todos los proyectos"""
+        return self.rol == 'superadmin'
+    
+    def puede_ver_bitacora(self) -> bool:
+        """Verifica si puede ver la bitácora completa"""
+        return self.rol == 'superadmin'
 
 class Proyecto(Base):
     __tablename__ = "proyectos"
@@ -44,14 +87,13 @@ class Proyecto(Base):
     id = Column(Integer, primary_key=True, index=True)
     nombre = Column(String(100), nullable=False)
     descripcion = Column(Text)
-    tabla_padron = Column(String(100))  # ← Almacena UUID de identificador_padrones!
+    tabla_padron = Column(String(100))  # UUID del padrón (referencia a identificador_padrones)
     activo = Column(Boolean, default=True)
     fecha_creacion = Column(DateTime(timezone=True), server_default=func.now())
     config_json = Column(JSON)
     is_deleted = Column(Boolean, default=False)
     logo = Column(String(500))
     
-    # Relaciones simplificadas
     plantillas = relationship("Plantilla", back_populates="proyecto")
 
 class IdentificadorPadrones(Base):
@@ -59,7 +101,7 @@ class IdentificadorPadrones(Base):
     __table_args__ = {'extend_existing': True}
     
     uuid_padron = Column(String(100), primary_key=True, index=True)
-    nombre_tabla = Column(String(100), unique=True, nullable=False)
+    nombre_tabla = Column(String(100), unique=True, nullable=False)  # nombre REAL de la tabla
     activo = Column(Boolean, default=True)
     descripcion = Column(Text)
 
@@ -71,14 +113,22 @@ class Plantilla(Base):
     proyecto_id = Column(Integer, ForeignKey("proyectos.id"))
     nombre = Column(String(100), nullable=False)
     descripcion = Column(Text)
-    ruta_archivo = Column(String(255))
+    
+    # 🆕 CAMPOS NUEVOS PARA WORD-BASED
+    ruta_archivo_docx = Column(String(500))  # Ruta al archivo Word original
+    campos_mapeo = Column(JSON)  # {"nombre": "nombre_completo", "direccion": "calle"}
+    configuracion = Column(JSON)  # {"fuente": "Calibri", "tamano": 11}
+    
+    # 🏷️ CAMPOS EXISTENTES (legacy - mantener compatibilidad)
+    ruta_archivo_pdf_legacy = Column(String(255))  # Renombrado de ruta_archivo
     tipo_plantilla = Column(String(20))
+    campos_json = Column(JSON)  # Legacy - campos con coordenadas
     activa = Column(Boolean, default=True)
     fecha_creacion = Column(DateTime(timezone=True), server_default=func.now())
     usuario_creador = Column(Integer, ForeignKey("usuarios.id"))
     is_deleted = Column(Boolean, default=False)
     
-    # Relación básica
+    # Relaciones
     proyecto = relationship("Proyecto", back_populates="plantillas")
 
 class Bitacora(Base):
@@ -111,6 +161,7 @@ class EmisionTemp(Base):
     error_mensaje = Column(Text)
     fecha_carga = Column(DateTime(timezone=True), server_default=func.now())
     sesion_id = Column(String(100))
+    orden_impresion = Column(Integer)  # 🆕 NUEVO
 
 class EmisionFinal(Base):
     __tablename__ = "emisiones_final"
@@ -126,6 +177,8 @@ class EmisionFinal(Base):
     fecha_generacion = Column(DateTime(timezone=True))
     estado_generacion = Column(String(20))
     fecha_creacion = Column(DateTime(timezone=True), server_default=func.now())
+    cuenta = Column(String(50))
+    orden_impresion = Column(Integer)
 
 class EmisionesAcumuladas(Base):
     __tablename__ = "emisiones_acumuladas"
@@ -154,46 +207,3 @@ class ConfiguracionSistema(Base):
     tipo = Column(String(20))
     descripcion = Column(Text)
     editable = Column(Boolean, default=True)
-
-class CampoPlantilla(Base):
-    """Modelo NUEVO y LIMPIO para campos de plantilla"""
-    __tablename__ = "campos_plantilla"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    plantilla_id = Column(Integer, ForeignKey("plantillas.id"), nullable=False)
-    
-    # Datos básicos
-    nombre = Column(String(100), nullable=False)
-    tipo = Column(String(20), nullable=False)  # 'texto', 'campo', 'compuesto', 'tabla'
-    
-    # Posición y tamaño (EN MILÍMETROS)
-    x = Column(Numeric(10, 2), nullable=False)  # mm desde izquierda
-    y = Column(Numeric(10, 2), nullable=False)  # mm desde arriba
-    ancho = Column(Numeric(10, 2), nullable=False)  # mm
-    alto = Column(Numeric(10, 2), nullable=False)  # mm
-    
-    # Estilo
-    alineacion = Column(String(10), default='left')  # 'left', 'center', 'right', 'justify'
-    fuente = Column(String(50), default='Helvetica')
-    tamano_fuente = Column(Integer, default=12)
-    color = Column(String(7), default='#000000')  # Hex color
-    negrita = Column(Boolean, default=False)
-    cursiva = Column(Boolean, default=False)
-    
-    # Para campos simples
-    texto_fijo = Column(Text)  # Si tipo='texto'
-    columna_padron = Column(String(100))  # Si tipo='campo'
-    
-    # Para campos compuestos (JSON estructurado)
-    componentes_json = Column(JSON)  # Ej: [{"tipo":"texto","valor":"Domicilio: "},{"tipo":"campo","columna":"calle"}]
-    
-    # Para tablas
-    tabla_config_json = Column(JSON)  # Ej: {"columnas":3,"filas":5,"encabezado":true,"celdas":[...]}
-    
-    # Metadata
-    orden = Column(Integer, default=0)  # Para z-order
-    activo = Column(Boolean, default=True)
-    fecha_creacion = Column(DateTime(timezone=True), server_default=func.now())
-    
-    # Relación
-    plantilla = relationship("Plantilla", backref="campos")

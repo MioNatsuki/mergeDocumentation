@@ -1,786 +1,695 @@
-from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTableWidget,
-    QTableWidgetItem, QHeaderView, QMessageBox, QComboBox, QFrame, QLineEdit,
-    QFileDialog, QProgressBar, QTextEdit, QGroupBox, QFormLayout, QCheckBox
-)
-from PyQt6.QtCore import Qt, pyqtSignal, QThread
-from PyQt6.QtGui import QFont
+# ui/modules/plantillas/dashboard_mejorado.py - VERSIÓN CORREGIDA
+from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
+                             QPushButton, QScrollArea, QGridLayout, 
+                             QMessageBox, QFrame, QComboBox, QLineEdit,
+                             QToolButton, QMenu, QInputDialog)
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer
+from PyQt6.QtGui import QFont, QAction, QColor
 from config.database import SessionLocal
-from core.template_service import TemplateService
-from core.padron_service import PadronService
-from core.models import Plantilla, Proyecto
+from core.models import Proyecto, Plantilla
 import os
-import tempfile
-import json
-from typing import Dict
 
-class ProcesarWordThread(QThread):
-    """Hilo para procesar archivo Word en segundo plano"""
-    procesamiento_completado = pyqtSignal(list, list)  # placeholders, errores
+class DashboardPlantillasMejorado(QWidget):
+    """Dashboard moderno de plantillas con filtros y vista mejorada"""
     
-    def __init__(self, word_path: str):
-        super().__init__()
-        self.word_path = word_path
-    
-    def run(self):
-        try:
-            placeholders = TemplateService.extraer_placeholders(self.word_path)
-            self.procesamiento_completado.emit(placeholders, [])
-        except Exception as e:
-            self.procesamiento_completado.emit([], [str(e)])
-
-class GenerarPreviewThread(QThread):
-    """Hilo para generar preview en segundo plano"""
-    preview_generado = pyqtSignal(bool, str)  # éxito, mensaje/ruta
-    
-    def __init__(self, word_path: str, mapeo: dict, datos_ejemplo: dict, output_dir: str):
-        super().__init__()
-        self.word_path = word_path
-        self.mapeo = mapeo
-        self.datos_ejemplo = datos_ejemplo
-        self.output_dir = output_dir
-    
-    def run(self):
-        try:
-            # Generar PDF
-            exito, ruta_pdf, mensaje = TemplateService.generar_pdf_directo(
-                self.word_path,
-                self.mapeo,
-                self.datos_ejemplo,
-                os.path.join(self.output_dir, "preview.pdf")
-            )
-            self.preview_generado.emit(exito, ruta_pdf if exito else mensaje)
-        except Exception as e:
-            self.preview_generado.emit(False, str(e))
-
-class DashboardPlantillas(QWidget):
-    """Dashboard para gestión de plantillas Word"""
-    
-    plantilla_guardada = pyqtSignal()
+    plantilla_seleccionada = pyqtSignal(int, str)  # id, accion (editar|usar|ver)
+    volver_a_proyectos = pyqtSignal()  # ← ¡SEÑAL AÑADIDA!
     
     def __init__(self, usuario, proyecto_id, stacked_widget=None):
         super().__init__()
         self.usuario = usuario
         self.proyecto_id = proyecto_id
+        self.proyecto = None
+        self.plantillas = []
+        self.plantillas_filtradas = []
         self.stacked_widget = stacked_widget
-        self.word_path = None
-        self.placeholders = []
-        self.columnas_padron = []
-        self.plantilla_existente = None
-        
         self.setup_ui()
-        self.cargar_columnas_padron()
-        self.cargar_plantillas_existentes()
+        self.cargar_datos()
     
     def setup_ui(self):
         layout = QVBoxLayout()
-        layout.setSpacing(20)
+        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
         
-        # Header
-        header = QLabel("Gestión de Plantillas Word")
-        header.setFont(QFont("Arial", 16, QFont.Weight.Bold))
-        header.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(header)
+        # HEADER CON ACCIONES
+        header = QFrame()
+        header.setStyleSheet("""
+            QFrame {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #4CAF50, stop:1 #2196F3);
+                border-radius: 10px;
+                padding: 15px;
+            }
+        """)
         
-        # Sección 1: Subir plantilla
-        upload_group = QGroupBox("1. Subir plantilla Word (.docx)")
-        upload_group.setFont(QFont("Arial", 11, QFont.Weight.Bold))
-        upload_layout = QVBoxLayout()
+        header_layout = QVBoxLayout()
         
-        # Selección de plantilla existente
-        form_layout = QFormLayout()
+        # Título y acciones rápidas
+        top_bar = QHBoxLayout()
         
-        self.combo_plantillas = QComboBox()
-        self.combo_plantillas.addItem("-- Crear nueva plantilla --", None)
-        self.combo_plantillas.currentIndexChanged.connect(self.on_plantilla_seleccionada)
-        form_layout.addRow("Plantillas existentes:", self.combo_plantillas)
-        
-        upload_layout.addLayout(form_layout)
-        
-        # Upload manual
-        upload_manual_layout = QHBoxLayout()
-        
-        self.txt_ruta_word = QLineEdit()
-        self.txt_ruta_word.setPlaceholderText("Ruta del archivo Word...")
-        self.txt_ruta_word.setReadOnly(True)
-        
-        btn_examinar = QPushButton("Examinar...")
-        btn_examinar.clicked.connect(self.examinar_archivo)
-        
-        btn_cargar = QPushButton("📁 Cargar Word")
-        btn_cargar.clicked.connect(self.cargar_archivo_manual)
-        btn_cargar.setStyleSheet("background-color: #17a2b8; color: white; padding: 8px;")
-        
-        upload_manual_layout.addWidget(QLabel("O subir nuevo:"))
-        upload_manual_layout.addWidget(self.txt_ruta_word)
-        upload_manual_layout.addWidget(btn_examinar)
-        upload_manual_layout.addWidget(btn_cargar)
-        upload_manual_layout.addStretch()
-        
-        upload_layout.addLayout(upload_manual_layout)
-        
-        # Info
-        lbl_info = QLabel("⚠️ El documento debe contener placeholders como {{nombre}}, {{direccion}}, etc.")
-        lbl_info.setStyleSheet("color: #856404; background-color: #fff3cd; padding: 8px; border-radius: 4px;")
-        upload_layout.addWidget(lbl_info)
-        
-        upload_group.setLayout(upload_layout)
-        layout.addWidget(upload_group)
-        
-        # Sección 2: Mapeo de campos (inicialmente oculta)
-        self.mapeo_group = QGroupBox("2. Mapear placeholders a columnas del padrón")
-        self.mapeo_group.setFont(QFont("Arial", 11, QFont.Weight.Bold))
-        self.mapeo_group.setVisible(False)
-        mapeo_layout = QVBoxLayout()
-        
-        # Estadísticas
-        self.lbl_estadisticas = QLabel("")
-        self.lbl_estadisticas.setStyleSheet("font-weight: bold; color: #495057;")
-        mapeo_layout.addWidget(self.lbl_estadisticas)
-        
-        # Tabla de mapeo
-        self.tabla_mapeo = QTableWidget()
-        self.tabla_mapeo.setColumnCount(3)
-        self.tabla_mapeo.setHorizontalHeaderLabels(["Placeholder", "Columna Padrón", "Valor de Ejemplo"])
-        self.tabla_mapeo.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.tabla_mapeo.setAlternatingRowColors(True)
-        mapeo_layout.addWidget(self.tabla_mapeo)
-        
-        # Botones de acción en mapeo
-        btn_mapeo_layout = QHBoxLayout()
-        
-        self.btn_auto_mapear = QPushButton("🔍 Mapeo Automático")
-        self.btn_auto_mapear.clicked.connect(self.mapeo_automatico)
-        self.btn_auto_mapear.setToolTip("Intenta mapear automáticamente por nombre similar")
-        
-        self.btn_limpiar_mapeo = QPushButton("🗑️ Limpiar Todo")
-        self.btn_limpiar_mapeo.clicked.connect(self.limpiar_mapeo)
-        
-        btn_mapeo_layout.addWidget(self.btn_auto_mapear)
-        btn_mapeo_layout.addWidget(self.btn_limpiar_mapeo)
-        btn_mapeo_layout.addStretch()
-        
-        mapeo_layout.addLayout(btn_mapeo_layout)
-        self.mapeo_group.setLayout(mapeo_layout)
-        layout.addWidget(self.mapeo_group)
-        
-        # Sección 3: Configuración
-        self.config_group = QGroupBox("3. Configuración de plantilla")
-        self.config_group.setFont(QFont("Arial", 11, QFont.Weight.Bold))
-        self.config_group.setVisible(False)
-        config_layout = QFormLayout()
-        
-        self.txt_nombre = QLineEdit()
-        self.txt_nombre.setPlaceholderText("Nombre de la plantilla")
-        config_layout.addRow("Nombre:", self.txt_nombre)
-        
-        self.txt_descripcion = QLineEdit()
-        self.txt_descripcion.setPlaceholderText("Descripción opcional")
-        config_layout.addRow("Descripción:", self.txt_descripcion)
-        
-        self.check_activa = QCheckBox("Plantilla activa")
-        self.check_activa.setChecked(True)
-        config_layout.addRow("", self.check_activa)
-        
-        self.config_group.setLayout(config_layout)
-        layout.addWidget(self.config_group)
-        
-        # Área de progreso para preview
-        self.preview_group = QGroupBox("Vista Previa")
-        self.preview_group.setVisible(False)
-        preview_layout = QVBoxLayout()
-        
-        self.progress_preview = QProgressBar()
-        self.progress_preview.setTextVisible(True)
-        self.progress_preview.setVisible(False)
-        
-        self.texto_log = QTextEdit()
-        self.texto_log.setMaximumHeight(100)
-        self.texto_log.setReadOnly(True)
-        self.texto_log.setStyleSheet("font-family: monospace; font-size: 10px;")
-        
-        preview_layout.addWidget(self.progress_preview)
-        preview_layout.addWidget(self.texto_log)
-        self.preview_group.setLayout(preview_layout)
-        layout.addWidget(self.preview_group)
-        
-        # Botones principales
-        button_layout = QHBoxLayout()
-        
-        self.btn_guardar = QPushButton("💾 Guardar Plantilla")
-        self.btn_guardar.clicked.connect(self.guardar_plantilla)
-        self.btn_guardar.setEnabled(False)
-        self.btn_guardar.setStyleSheet("""
+        # Botón volver
+        btn_volver = QPushButton("← Volver a Proyectos")
+        btn_volver.clicked.connect(self.volver_proyectos)  # ← CONECTAR AL MÉTODO
+        btn_volver.setStyleSheet("""
             QPushButton {
-                background-color: #28a745;
+                background-color: rgba(255,255,255,0.2);
                 color: white;
                 border: none;
-                padding: 12px 24px;
+                padding: 8px 15px;
                 border-radius: 6px;
                 font-weight: bold;
-                font-size: 14px;
             }
-            QPushButton:disabled {
-                background-color: #6c757d;
+            QPushButton:hover {
+                background-color: rgba(255,255,255,0.3);
             }
         """)
         
-        self.btn_preview = QPushButton("👁️ Generar Preview")
-        self.btn_preview.clicked.connect(self.generar_preview)
-        self.btn_preview.setEnabled(False)
-        self.btn_preview.setStyleSheet("""
+        # Título del proyecto
+        self.lbl_titulo = QLabel("Cargando proyecto...")
+        self.lbl_titulo.setFont(QFont("Arial", 14, QFont.Weight.Bold))
+        self.lbl_titulo.setStyleSheet("color: white;")
+        
+        top_bar.addWidget(btn_volver)
+        top_bar.addStretch()
+        top_bar.addWidget(self.lbl_titulo)
+        top_bar.addStretch()
+        
+        # Botón nueva plantilla (destacado)
+        self.btn_nueva = QPushButton("✨ Nueva Plantilla")
+        self.btn_nueva.clicked.connect(self.crear_nueva_plantilla)
+        self.btn_nueva.setStyleSheet("""
             QPushButton {
-                background-color: #17a2b8;
+                background-color: #FF9800;
                 color: white;
                 border: none;
-                padding: 12px 24px;
-                border-radius: 6px;
+                padding: 10px 20px;
+                border-radius: 8px;
+                font-weight: bold;
+                font-size: 13px;
             }
-            QPushButton:disabled {
-                background-color: #6c757d;
-            }
-        """)
-        
-        self.btn_cancelar = QPushButton("❌ Cancelar")
-        self.btn_cancelar.clicked.connect(self.cancelar)
-        self.btn_cancelar.setStyleSheet("""
-            QPushButton {
-                background-color: #6c757d;
-                color: white;
-                border: none;
-                padding: 12px 24px;
-                border-radius: 6px;
+            QPushButton:hover {
+                background-color: #F57C00;
             }
         """)
+        top_bar.addWidget(self.btn_nueva)
         
-        button_layout.addWidget(self.btn_guardar)
-        button_layout.addWidget(self.btn_preview)
-        button_layout.addStretch()
-        button_layout.addWidget(self.btn_cancelar)
+        header_layout.addLayout(top_bar)
         
-        layout.addLayout(button_layout)
+        # Descripción
+        self.lbl_descripcion = QLabel()
+        self.lbl_descripcion.setStyleSheet("color: rgba(255,255,255,0.9); font-size: 12px;")
+        self.lbl_descripcion.setWordWrap(True)
+        header_layout.addWidget(self.lbl_descripcion)
+        
+        header.setLayout(header_layout)
+        layout.addWidget(header)
+        
+        # BARRA DE HERRAMIENTAS
+        toolbar = QFrame()
+        toolbar_layout = QHBoxLayout()
+        
+        # Búsqueda
+        self.txt_buscar = QLineEdit()
+        self.txt_buscar.setPlaceholderText("🔍 Buscar plantillas...")
+        self.txt_buscar.textChanged.connect(self.filtrar_plantillas)
+        self.txt_buscar.setStyleSheet("""
+            QLineEdit {
+                padding: 8px 12px;
+                border: 2px solid #E0E0E0;
+                border-radius: 6px;
+                font-size: 13px;
+            }
+            QLineEdit:focus {
+                border-color: #2196F3;
+            }
+        """)
+        toolbar_layout.addWidget(self.txt_buscar)
+        
+        toolbar_layout.addStretch()
+        
+        # Filtros
+        self.combo_filtro = QComboBox()
+        self.combo_filtro.addItems(["Todas", "Activas", "Inactivas", "Cartas", "Notificaciones", "Oficios"])
+        self.combo_filtro.currentTextChanged.connect(self.filtrar_plantillas)
+        toolbar_layout.addWidget(QLabel("Filtrar:"))
+        toolbar_layout.addWidget(self.combo_filtro)
+        
+        # Orden
+        self.combo_orden = QComboBox()
+        self.combo_orden.addItems(["Más recientes", "A-Z", "Z-A", "Más usadas"])
+        self.combo_orden.currentTextChanged.connect(self.ordenar_plantillas)
+        toolbar_layout.addWidget(QLabel("Orden:"))
+        toolbar_layout.addWidget(self.combo_orden)
+        
+        toolbar.setLayout(toolbar_layout)
+        layout.addWidget(toolbar)
+        
+        # CONTADOR
+        self.lbl_contador = QLabel()
+        self.lbl_contador.setStyleSheet("""
+            QLabel {
+                color: #666;
+                font-size: 12px;
+                padding: 5px 10px;
+                background-color: #F5F5F5;
+                border-radius: 4px;
+                border-left: 3px solid #4CAF50;
+            }
+        """)
+        layout.addWidget(self.lbl_contador)
+        
+        # ÁREA DE PLANTILLAS
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        
+        self.plantillas_container = QWidget()
+        self.grid_layout = QGridLayout()
+        self.grid_layout.setSpacing(20)
+        self.grid_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.grid_layout.setContentsMargins(10, 10, 10, 10)
+        
+        self.plantillas_container.setLayout(self.grid_layout)
+        scroll_area.setWidget(self.plantillas_container)
+        layout.addWidget(scroll_area)
+        
+        # MENSAJES DE ESTADO
+        self.lbl_sin_plantillas = self.crear_mensaje_estado(
+            "📭 No hay plantillas",
+            "Crea tu primera plantilla para este proyecto",
+            "#FF9800"
+        )
+        layout.addWidget(self.lbl_sin_plantillas)
+        self.lbl_sin_plantillas.hide()
+        
+        self.lbl_sin_resultados = self.crear_mensaje_estado(
+            "🔍 No se encontraron resultados",
+            "Intenta con otros términos de búsqueda",
+            "#2196F3"
+        )
+        layout.addWidget(self.lbl_sin_resultados)
+        self.lbl_sin_resultados.hide()
+        
         self.setLayout(layout)
     
-    def cargar_columnas_padron(self):
-        """Carga columnas del padrón del proyecto"""
-        db = SessionLocal()
-        try:
-            # Obtener UUID del padrón del proyecto
-            proyecto = db.query(Proyecto).filter(Proyecto.id == self.proyecto_id).first()
-            
-            if proyecto and proyecto.tabla_padron:
-                padron_service = PadronService(db)
-                self.columnas_padron = padron_service.obtener_columnas_padron(proyecto.tabla_padron)
-                
-                # También obtener datos de ejemplo para preview
-                self.datos_ejemplo = padron_service.obtener_datos_ejemplo_real(proyecto.tabla_padron, limit=1)
-                if self.datos_ejemplo:
-                    self.datos_ejemplo = self.datos_ejemplo[0]
-                else:
-                    self.datos_ejemplo = {}
-        except Exception as e:
-            print(f"Error cargando columnas padrón: {e}")
-            self.columnas_padron = []
-            self.datos_ejemplo = {}
-        finally:
-            db.close()
+    def crear_mensaje_estado(self, titulo, subtitulo, color):
+        """Crea widget de mensaje de estado"""
+        frame = QFrame()
+        frame.setStyleSheet(f"""
+            QFrame {{
+                background-color: {color}10;
+                border: 2px dashed {color};
+                border-radius: 10px;
+                padding: 40px;
+            }}
+        """)
+        
+        layout = QVBoxLayout()
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        lbl_titulo = QLabel(titulo)
+        lbl_titulo.setFont(QFont("Arial", 14, QFont.Weight.Bold))
+        lbl_titulo.setStyleSheet(f"color: {color};")
+        
+        lbl_subtitulo = QLabel(subtitulo)
+        lbl_subtitulo.setFont(QFont("Arial", 11))
+        lbl_subtitulo.setStyleSheet("color: #666;")
+        
+        layout.addWidget(lbl_titulo)
+        layout.addWidget(lbl_subtitulo)
+        frame.setLayout(layout)
+        
+        return frame
     
-    def cargar_plantillas_existentes(self):
-        """Carga plantillas existentes del proyecto"""
+    def cargar_datos(self):
+        """Carga proyecto y plantillas"""
         db = SessionLocal()
         try:
-            plantillas = db.query(Plantilla).filter(
+            # Cargar proyecto
+            self.proyecto = db.query(Proyecto).filter(Proyecto.id == self.proyecto_id).first()
+            if self.proyecto:
+                self.lbl_titulo.setText(f"Plantillas - {self.proyecto.nombre}")
+                self.lbl_descripcion.setText(self.proyecto.descripcion or "Sin descripción")
+            
+            # Cargar plantillas
+            self.plantillas = db.query(Plantilla).filter(
                 Plantilla.proyecto_id == self.proyecto_id,
                 Plantilla.is_deleted == False
             ).all()
             
-            for plantilla in plantillas:
-                self.combo_plantillas.addItem(plantilla.nombre, plantilla.id)
-                
+            self.plantillas_filtradas = self.plantillas.copy()
+            self.mostrar_plantillas()
+            self.actualizar_contador()
+            
         except Exception as e:
-            print(f"Error cargando plantillas: {e}")
+            QMessageBox.critical(self, "Error", f"Error cargando datos: {str(e)}")
         finally:
             db.close()
     
-    def on_plantilla_seleccionada(self):
-        """Cuando se selecciona una plantilla existente"""
-        plantilla_id = self.combo_plantillas.currentData()
+    def mostrar_plantillas(self):
+        """Muestra plantillas en grid"""
+        # Limpiar grid
+        for i in reversed(range(self.grid_layout.count())): 
+            widget = self.grid_layout.itemAt(i).widget()
+            if widget:
+                widget.setParent(None)
         
-        if plantilla_id:
-            # Cargar plantilla existente
+        if not self.plantillas:
+            self.lbl_sin_plantillas.show()
+            self.lbl_sin_resultados.hide()
+            return
+        
+        if not self.plantillas_filtradas:
+            self.lbl_sin_plantillas.hide()
+            self.lbl_sin_resultados.show()
+            return
+        
+        # Ocultar mensajes
+        self.lbl_sin_plantillas.hide()
+        self.lbl_sin_resultados.hide()
+        
+        # Mostrar plantillas (3 columnas responsive)
+        for i, plantilla in enumerate(self.plantillas_filtradas):
+            card = self.crear_card_plantilla(plantilla)
+            row = i // 3
+            col = i % 3
+            self.grid_layout.addWidget(card, row, col)
+    
+    def crear_card_plantilla(self, plantilla):
+        """Crea tarjeta moderna para plantilla"""
+        card = QFrame()
+        card.setFixedSize(280, 220)
+        card.setCursor(Qt.CursorShape.PointingHandCursor)
+        
+        # Estilos según estado
+        if plantilla.activa:
+            border_color = "#4CAF50"
+            bg_color = "#FFFFFF"
+        else:
+            border_color = "#9E9E9E"
+            bg_color = "#FAFAFA"
+        
+        card.setStyleSheet(f"""
+            QFrame {{
+                background-color: {bg_color};
+                border: 2px solid {border_color};
+                border-radius: 10px;
+                padding: 15px;
+            }}
+            QFrame:hover {{
+                border-color: #2196F3;
+                background-color: #F8FDFF;
+            }}
+        """)
+        
+        layout = QVBoxLayout()
+        layout.setSpacing(10)
+        
+        # Icono según tipo
+        icono = self.obtener_icono_tipo(plantilla.tipo_plantilla)
+        lbl_icono = QLabel(icono)
+        lbl_icono.setFont(QFont("Arial", 24))
+        lbl_icono.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(lbl_icono)
+        
+        # Nombre
+        lbl_nombre = QLabel(plantilla.nombre)
+        lbl_nombre.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        lbl_nombre.setWordWrap(True)
+        lbl_nombre.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(lbl_nombre)
+        
+        # Descripción (truncada)
+        desc = plantilla.descripcion or "Sin descripción"
+        if len(desc) > 60:
+            desc = desc[:57] + "..."
+        
+        lbl_desc = QLabel(desc)
+        lbl_desc.setStyleSheet("color: #666; font-size: 11px;")
+        lbl_desc.setWordWrap(True)
+        lbl_desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(lbl_desc)
+        
+        # Estado y fecha
+        info_layout = QHBoxLayout()
+        
+        estado = QLabel("✅ Activa" if plantilla.activa else "⏸️ Inactiva")
+        estado.setStyleSheet(f"""
+            color: {'#4CAF50' if plantilla.activa else '#9E9E9E'};
+            font-size: 10px;
+            font-weight: bold;
+        """)
+        
+        fecha = QLabel(plantilla.fecha_creacion.strftime("%d/%m/%Y"))
+        fecha.setStyleSheet("color: #999; font-size: 10px;")
+        
+        info_layout.addWidget(estado)
+        info_layout.addStretch()
+        info_layout.addWidget(fecha)
+        layout.addLayout(info_layout)
+        
+        layout.addStretch()
+        
+        # Botones de acción
+        btn_layout = QHBoxLayout()
+        
+        # Botón principal (Usar/Ver)
+        if plantilla.activa:
+            btn_accion = QPushButton("📄 Usar Plantilla")
+            btn_accion.clicked.connect(lambda: self.plantilla_seleccionada.emit(plantilla.id, "usar"))
+            btn_accion.setStyleSheet("""
+                QPushButton {
+                    background-color: #4CAF50;
+                    color: white;
+                    border: none;
+                    padding: 6px 12px;
+                    border-radius: 4px;
+                    font-size: 11px;
+                }
+                QPushButton:hover {
+                    background-color: #45a049;
+                }
+            """)
+        else:
+            btn_accion = QPushButton("👁️ Ver")
+            btn_accion.clicked.connect(lambda: self.plantilla_seleccionada.emit(plantilla.id, "ver"))
+            btn_accion.setStyleSheet("""
+                QPushButton {
+                    background-color: #9E9E9E;
+                    color: white;
+                    border: none;
+                    padding: 6px 12px;
+                    border-radius: 4px;
+                    font-size: 11px;
+                }
+            """)
+        
+        btn_layout.addWidget(btn_accion)
+        
+        # Menú de opciones (solo admin/superadmin)
+        if self.usuario.rol in ["superadmin", "admin"]:
+            btn_menu = QToolButton()
+            btn_menu.setText("⋮")
+            btn_menu.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+            
+            menu = QMenu()
+            
+            action_editar = QAction("✏️ Editar", self)
+            action_editar.triggered.connect(lambda: self.plantilla_seleccionada.emit(plantilla.id, "editar"))
+            
+            action_duplicar = QAction("📋 Duplicar", self)
+            action_duplicar.triggered.connect(lambda: self.duplicar_plantilla(plantilla.id))
+            
+            if plantilla.activa:
+                action_desactivar = QAction("⏸️ Desactivar", self)
+                action_desactivar.triggered.connect(lambda: self.cambiar_estado_plantilla(plantilla.id, False))
+            else:
+                action_activar = QAction("▶️ Activar", self)
+                action_activar.triggered.connect(lambda: self.cambiar_estado_plantilla(plantilla.id, True))
+            
+            action_eliminar = QAction("🗑️ Eliminar", self)
+            action_eliminar.triggered.connect(lambda: self.eliminar_plantilla(plantilla.id))
+            
+            menu.addAction(action_editar)
+            menu.addAction(action_duplicar)
+            menu.addSeparator()
+            menu.addAction(action_desactivar if plantilla.activa else action_activar)
+            menu.addAction(action_eliminar)
+            
+            btn_menu.setMenu(menu)
+            btn_layout.addWidget(btn_menu)
+        
+        layout.addLayout(btn_layout)
+        card.setLayout(layout)
+        
+        return card
+    
+    def obtener_icono_tipo(self, tipo):
+        """Devuelve icono según tipo de plantilla"""
+        iconos = {
+            "carta": "📝",
+            "notificacion": "📢", 
+            "oficio": "📄",
+            "comunicado": "🗞️",
+            "cobranza": "💸",
+            "pensiones": "👵",
+            None: "📁"
+        }
+        return iconos.get(tipo, "📁")
+    
+    def filtrar_plantillas(self):
+        """Filtra plantillas por texto y filtros"""
+        texto = self.txt_buscar.text().lower().strip()
+        filtro = self.combo_filtro.currentText()
+        
+        self.plantillas_filtradas = []
+        
+        for plantilla in self.plantillas:
+            # Filtro por texto
+            if texto and texto not in plantilla.nombre.lower():
+                if not plantilla.descripcion or texto not in plantilla.descripcion.lower():
+                    continue
+            
+            # Filtro por estado/tipo
+            if filtro == "Activas" and not plantilla.activa:
+                continue
+            elif filtro == "Inactivas" and plantilla.activa:
+                continue
+            elif filtro not in ["Todas", "Activas", "Inactivas"]:
+                if plantilla.tipo_plantilla != filtro.lower():
+                    continue
+            
+            self.plantillas_filtradas.append(plantilla)
+        
+        self.ordenar_plantillas()
+        self.actualizar_contador()
+    
+    def ordenar_plantillas(self):
+        """Ordena plantillas según criterio"""
+        criterio = self.combo_orden.currentText()
+        
+        if criterio == "Más recientes":
+            self.plantillas_filtradas.sort(key=lambda x: x.fecha_creacion, reverse=True)
+        elif criterio == "A-Z":
+            self.plantillas_filtradas.sort(key=lambda x: x.nombre.lower())
+        elif criterio == "Z-A":
+            self.plantillas_filtradas.sort(key=lambda x: x.nombre.lower(), reverse=True)
+        # "Más usadas" requeriría tracking de uso
+        
+        self.mostrar_plantillas()
+    
+    def actualizar_contador(self):
+        """Actualiza contador de resultados"""
+        total = len(self.plantillas)
+        filtradas = len(self.plantillas_filtradas)
+        
+        if total == 0:
+            self.lbl_contador.setText("No hay plantillas en este proyecto")
+        elif total == filtradas:
+            self.lbl_contador.setText(f"📋 Mostrando {total} plantillas")
+        else:
+            self.lbl_contador.setText(f"🔍 {filtradas} de {total} plantillas")
+    
+    def crear_nueva_plantilla(self):
+        """Abre editor para nueva plantilla"""
+        from PyQt6.QtWidgets import QFileDialog
+        
+        pdf_path, _ = QFileDialog.getOpenFileName(
+            self, 
+            "Seleccionar PDF Base", 
+            "", 
+            "Archivos PDF (*.pdf)"
+        )
+        
+        if not pdf_path:
+            return
+        
+        # IMPORTANTE: Resetear plantilla_a_editar
+        if hasattr(self, 'plantilla_a_editar'):
+            delattr(self, 'plantilla_a_editar')
+        
+        self.abrir_editor_con_pdf(pdf_path)
+    
+    def editar_plantilla(self, plantilla_id):
+        """Abre editor para editar plantilla existente"""
+        from config.database import SessionLocal
+        from core.models import Plantilla
+        
+        db = SessionLocal()
+        try:
+            plantilla = db.query(Plantilla).filter(Plantilla.id == plantilla_id).first()
+            if plantilla and plantilla.campos_json:
+                # Guardar datos de la plantilla para editar
+                self.plantilla_a_editar = plantilla.campos_json
+                self.plantilla_a_editar["nombre"] = plantilla.nombre
+                self.plantilla_a_editar["id"] = plantilla.id
+                
+                # Abrir editor con el PDF de la plantilla
+                if plantilla.ruta_archivo and os.path.exists(plantilla.ruta_archivo):
+                    self.abrir_editor_con_pdf(plantilla.ruta_archivo, self.plantilla_a_editar)
+                else:
+                    QMessageBox.warning(self, "Error", 
+                                    f"El archivo PDF no existe: {plantilla.ruta_archivo}")
+            else:
+                QMessageBox.warning(self, "Error", "Plantilla no encontrada o sin campos")
+        finally:
+            db.close()
+
+    def abrir_editor_con_pdf(self, pdf_path, plantilla_existente=None):
+        """Abre el nuevo editor"""
+        try:
+            from ui.modules.plantillas.editor_plantillas import EditorPlantillas
+            
+            editor = EditorPlantillas(
+                usuario=self.usuario,
+                proyecto_id=self.proyecto_id,
+                pdf_path=pdf_path,
+                stacked_widget=self.stacked_widget,
+                plantilla_id=plantilla_existente.get('id') if plantilla_existente else None
+            )
+            
+            editor.plantilla_guardada.connect(self.on_plantilla_guardada)
+            
+            self.stacked_widget.addWidget(editor)
+            self.stacked_widget.setCurrentWidget(editor)
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"No se pudo abrir el editor: {str(e)}")
+
+    def on_plantilla_guardada(self, configuracion):
+        """Cuando se guarda una plantilla desde el editor"""
+        if not configuracion:
+            # Cancelado
+            if self.stacked_widget:
+                self.stacked_widget.setCurrentWidget(self)
+            return
+        
+        # Guardar en base de datos
+        from config.database import SessionLocal
+        from core.models import Plantilla
+        from PyQt6.QtWidgets import QInputDialog
+        
+        db = SessionLocal()
+        try:
+            # Pedir nombre de la plantilla
+            nombre, ok = QInputDialog.getText(
+                self, "Nombre de la plantilla",
+                "Ingresa un nombre para la plantilla:",
+                text=f"Plantilla {len(self.plantillas) + 1}"
+            )
+            
+            if not ok or not nombre.strip():
+                return
+            
+            # Crear plantilla
+            plantilla = Plantilla(
+                proyecto_id=self.proyecto_id,
+                nombre=nombre.strip(),
+                descripcion="Creada con el editor visual",
+                ruta_archivo=configuracion.get("pdf_base", ""),
+                tipo_plantilla="carta",
+                campos_json=configuracion,
+                activa=True,
+                usuario_creador=self.usuario.id,
+                is_deleted=False
+            )
+            
+            db.add(plantilla)
+            db.commit()
+            
+            # Actualizar lista
+            self.cargar_datos()
+            
+            # Volver al dashboard
+            if self.stacked_widget:
+                self.stacked_widget.setCurrentWidget(self)
+            
+            QMessageBox.information(self, "Éxito", "✅ Plantilla guardada correctamente")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error guardando plantilla: {str(e)}")
+            db.rollback()
+        finally:
+            db.close()
+
+    def on_plantilla_creada(self):
+        """Cuando se crea una nueva plantilla"""
+        self.cargar_datos()
+        if self.stacked_widget:
+            self.stacked_widget.setCurrentWidget(self)
+        
+        QMessageBox.information(self, "Éxito", "✅ Plantilla creada correctamente")
+    
+    def volver_proyectos(self):
+        """Regresa al dashboard de proyectos"""
+        self.volver_a_proyectos.emit()  # ← ¡EMITIR LA SEÑAL!
+    
+    def duplicar_plantilla(self, plantilla_id):
+        """Duplica una plantilla existente"""
+        db = SessionLocal()
+        try:
+            plantilla = db.query(Plantilla).filter(Plantilla.id == plantilla_id).first()
+            if plantilla:
+                nueva = Plantilla(
+                    proyecto_id=plantilla.proyecto_id,
+                    nombre=f"{plantilla.nombre} (Copia)",
+                    descripcion=plantilla.descripcion,
+                    ruta_archivo=plantilla.ruta_archivo,
+                    tipo_plantilla=plantilla.tipo_plantilla,
+                    campos_json=plantilla.campos_json,
+                    activa=False,
+                    usuario_creador=self.usuario.id
+                )
+                db.add(nueva)
+                db.commit()
+                
+                self.cargar_datos()
+                QMessageBox.information(self, "Éxito", "✅ Plantilla duplicada")
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error duplicando plantilla: {str(e)}")
+        finally:
+            db.close()
+    
+    def cambiar_estado_plantilla(self, plantilla_id, activar):
+        """Activa/desactiva una plantilla"""
+        db = SessionLocal()
+        try:
+            plantilla = db.query(Plantilla).filter(Plantilla.id == plantilla_id).first()
+            if plantilla:
+                plantilla.activa = activar
+                db.commit()
+                
+                self.cargar_datos()
+                estado = "activada" if activar else "desactivada"
+                QMessageBox.information(self, "Éxito", f"✅ Plantilla {estado}")
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error cambiando estado: {str(e)}")
+        finally:
+            db.close()
+    
+    def eliminar_plantilla(self, plantilla_id):
+        """Elimina (soft delete) una plantilla"""
+        reply = QMessageBox.question(
+            self, "Confirmar eliminación",
+            "¿Está seguro de eliminar esta plantilla?\n\n"
+            "Esta acción marcará la plantilla como eliminada.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
             db = SessionLocal()
             try:
                 plantilla = db.query(Plantilla).filter(Plantilla.id == plantilla_id).first()
                 if plantilla:
-                    self.plantilla_existente = plantilla
+                    plantilla.is_deleted = True  # Soft delete
+                    db.commit()
                     
-                    # Cargar datos en la UI
-                    self.txt_nombre.setText(plantilla.nombre)
-                    self.txt_descripcion.setText(plantilla.descripcion or "")
-                    self.check_activa.setChecked(plantilla.activa)
+                    self.cargar_datos()
+                    QMessageBox.information(self, "Éxito", "✅ Plantilla eliminada")
                     
-                    # Si tiene archivo Word, cargarlo
-                    if plantilla.ruta_archivo_docx and os.path.exists(plantilla.ruta_archivo_docx):
-                        self.word_path = plantilla.ruta_archivo_docx
-                        self.txt_ruta_word.setText(plantilla.ruta_archivo_docx)
-                        
-                        # Extraer placeholders
-                        self.procesar_word(plantilla.ruta_archivo_docx)
-                        
-                        # Cargar mapeo existente
-                        if plantilla.campos_mapeo:
-                            self.cargar_mapeo_existente(plantilla.campos_mapeo)
-                    
-                    self.btn_guardar.setText("💾 Actualizar Plantilla")
-                    
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Error eliminando plantilla: {str(e)}")
             finally:
                 db.close()
-        else:
-            # Nueva plantilla
-            self.plantilla_existente = None
-            self.limpiar_formulario()
-            self.btn_guardar.setText("💾 Guardar Plantilla")
-    
-    def cargar_mapeo_existente(self, campos_mapeo: dict):
-        """Carga un mapeo existente en la tabla"""
-        if not campos_mapeo:
-            return
-        
-        # Buscar cada placeholder en la tabla y asignar columna
-        for row in range(self.tabla_mapeo.rowCount()):
-            placeholder_item = self.tabla_mapeo.item(row, 0)
-            if placeholder_item:
-                placeholder = placeholder_item.text().replace('{', '').replace('}', '')
-                
-                # Buscar en el mapeo
-                for key, value in campos_mapeo.items():
-                    if key == placeholder and value:
-                        # Encontrar el combo y asignar valor
-                        combo = self.tabla_mapeo.cellWidget(row, 1)
-                        if combo:
-                            index = combo.findData(value)
-                            if index >= 0:
-                                combo.setCurrentIndex(index)
-    
-    def examinar_archivo(self):
-        """Abre diálogo para seleccionar archivo Word"""
-        archivo, _ = QFileDialog.getOpenFileName(
-            self,
-            "Seleccionar plantilla Word",
-            "",
-            "Documentos Word (*.docx);;Todos los archivos (*)"
-        )
-        
-        if archivo:
-            self.txt_ruta_word.setText(archivo)
-    
-    def cargar_archivo_manual(self):
-        """Carga archivo Word desde la ruta especificada"""
-        ruta = self.txt_ruta_word.text().strip()
-        
-        if not ruta:
-            QMessageBox.warning(self, "Error", "Por favor seleccione un archivo Word")
-            return
-        
-        if not os.path.exists(ruta):
-            QMessageBox.warning(self, "Error", f"El archivo no existe:\n{ruta}")
-            return
-        
-        if not ruta.lower().endswith('.docx'):
-            QMessageBox.warning(self, "Error", "El archivo debe ser .docx")
-            return
-        
-        # Procesar el archivo
-        self.procesar_word(ruta)
-    
-    def procesar_word(self, word_path: str):
-        """Procesa archivo Word y extrae placeholders"""
-        self.word_path = word_path
-        
-        # Mostrar progreso
-        self.texto_log.clear()
-        self.agregar_log(f"📄 Procesando: {os.path.basename(word_path)}...")
-        
-        # Ejecutar en hilo para no bloquear UI
-        self.thread_procesar = ProcesarWordThread(word_path)
-        self.thread_procesar.procesamiento_completado.connect(self.on_procesamiento_completado)
-        self.thread_procesar.start()
-    
-    def on_procesamiento_completado(self, placeholders: list, errores: list):
-        """Cuando termina el procesamiento del Word"""
-        if errores:
-            QMessageBox.critical(self, "Error", f"Error procesando Word:\n{errores[0]}")
-            return
-        
-        if not placeholders:
-            QMessageBox.warning(self, "Sin placeholders", 
-                              "No se encontraron placeholders {{...}} en el documento.\n\n"
-                              "Asegúrese de usar el formato: {{nombre}}, {{direccion}}, etc.")
-            return
-        
-        self.placeholders = placeholders
-        self.agregar_log(f"✅ Encontrados {len(placeholders)} placeholders")
-        
-        # Mostrar secciones de mapeo y configuración
-        self.mapeo_group.setVisible(True)
-        self.config_group.setVisible(True)
-        self.preview_group.setVisible(True)
-        
-        # Actualizar estadísticas
-        self.lbl_estadisticas.setText(
-            f"📊 {len(placeholders)} placeholders encontrados | "
-            f"{len(self.columnas_padron)} columnas en padrón"
-        )
-        
-        # Mostrar tabla de mapeo
-        self.mostrar_tabla_mapeo()
-        
-        # Habilitar botones
-        self.btn_guardar.setEnabled(True)
-        self.btn_preview.setEnabled(True)
-        
-        # Si es nueva plantilla, sugerir nombre basado en archivo
-        if not self.plantilla_existente:
-            nombre_base = os.path.splitext(os.path.basename(self.word_path))[0]
-            self.txt_nombre.setText(f"Plantilla {nombre_base}")
-    
-    def mostrar_tabla_mapeo(self):
-        """Muestra tabla con placeholders y dropdowns para mapeo"""
-        self.tabla_mapeo.setRowCount(len(self.placeholders))
-        
-        for i, placeholder in enumerate(self.placeholders):
-            # Columna 1: Placeholder
-            item = QTableWidgetItem(f"{{{{{placeholder}}}}}")
-            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            item.setToolTip(f"Placeholder: {placeholder}")
-            self.tabla_mapeo.setItem(i, 0, item)
-            
-            # Columna 2: Dropdown con columnas del padrón
-            combo = QComboBox()
-            combo.addItem("-- No asignar --", None)
-            
-            # Agrupar columnas por tipo
-            comboTipos = {}
-            for col in self.columnas_padron:
-                tipo = col.get('tipo', 'texto')
-                if tipo not in comboTipos:
-                    comboTipos[tipo] = QComboBox()
-                    comboTipos[tipo].addItem(f"-- {tipo.upper()} --", None)
-                
-                comboTipos[tipo].addItem(f"{col['nombre']} ({col['tipo_db']})", col['nombre'])
-            
-            # Crear combo principal con grupos
-            combo.addItem("═════ TEXTOS ═════", None)
-            for col in self.columnas_padron:
-                if col['tipo'] == 'texto':
-                    combo.addItem(f"📝 {col['nombre']}", col['nombre'])
-            
-            combo.addItem("═════ NÚMEROS ════", None)
-            for col in self.columnas_padron:
-                if col['tipo'] == 'numero':
-                    combo.addItem(f"🔢 {col['nombre']}", col['nombre'])
-            
-            combo.addItem("═════ FECHAS ═════", None)
-            for col in self.columnas_padron:
-                if col['tipo'] == 'fecha':
-                    combo.addItem(f"📅 {col['nombre']}", col['nombre'])
-            
-            # Buscar match automático
-            placeholder_lower = placeholder.lower()
-            mejor_match = None
-            mejor_puntaje = 0
-            
-            for col in self.columnas_padron:
-                columna_lower = col['nombre'].lower()
-                
-                # Calcular puntaje de similitud
-                puntaje = 0
-                if placeholder_lower == columna_lower:
-                    puntaje = 100
-                elif placeholder_lower in columna_lower:
-                    puntaje = 80
-                elif columna_lower in placeholder_lower:
-                    puntaje = 70
-                elif any(palabra in columna_lower for palabra in placeholder_lower.split('_')):
-                    puntaje = 50
-                
-                if puntaje > mejor_puntaje:
-                    mejor_puntaje = puntaje
-                    mejor_match = col['nombre']
-            
-            # Seleccionar mejor match si hay
-            if mejor_match and mejor_puntaje > 40:
-                index = combo.findData(mejor_match)
-                if index >= 0:
-                    combo.setCurrentIndex(index)
-            
-            self.tabla_mapeo.setCellWidget(i, 1, combo)
-            
-            # Columna 3: Valor de ejemplo (se llena después)
-            item_ejemplo = QTableWidgetItem("")
-            item_ejemplo.setFlags(item_ejemplo.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            self.tabla_mapeo.setItem(i, 2, item_ejemplo)
-        
-        # Actualizar valores de ejemplo
-        self.actualizar_valores_ejemplo()
-    
-    def actualizar_valores_ejemplo(self):
-        """Actualiza la columna de valores de ejemplo basado en el mapeo actual"""
-        if not self.datos_ejemplo:
-            return
-        
-        for i in range(self.tabla_mapeo.rowCount()):
-            combo = self.tabla_mapeo.cellWidget(i, 1)
-            if combo:
-                columna = combo.currentData()
-                if columna and columna in self.datos_ejemplo:
-                    valor = self.datos_ejemplo[columna]
-                    if valor is None:
-                        valor = "(vacío)"
-                    elif len(str(valor)) > 30:
-                        valor = str(valor)[:27] + "..."
-                    
-                    item = self.tabla_mapeo.item(i, 2)
-                    if item:
-                        item.setText(str(valor))
-    
-    def mapeo_automatico(self):
-        """Intenta mapear automáticamente todos los placeholders"""
-        for i in range(self.tabla_mapeo.rowCount()):
-            placeholder_item = self.tabla_mapeo.item(i, 0)
-            if placeholder_item:
-                placeholder = placeholder_item.text().replace('{', '').replace('}', '')
-                
-                # Si ya tiene asignación, saltar
-                combo = self.tabla_mapeo.cellWidget(i, 1)
-                if combo and combo.currentData():
-                    continue
-                
-                # Buscar mejor match
-                placeholder_lower = placeholder.lower()
-                mejor_match = None
-                mejor_puntaje = 0
-                
-                for col in self.columnas_padron:
-                    columna_lower = col['nombre'].lower()
-                    
-                    # Calcular similitud
-                    if placeholder_lower == columna_lower:
-                        mejor_match = col['nombre']
-                        mejor_puntaje = 100
-                        break
-                    elif placeholder_lower in columna_lower or columna_lower in placeholder_lower:
-                        puntaje = 70
-                        if puntaje > mejor_puntaje:
-                            mejor_puntaje = puntaje
-                            mejor_match = col['nombre']
-                
-                # Asignar si encontramos buen match
-                if mejor_match and mejor_puntaje > 60:
-                    index = combo.findData(mejor_match)
-                    if index >= 0:
-                        combo.setCurrentIndex(index)
-        
-        # Actualizar valores de ejemplo
-        self.actualizar_valores_ejemplo()
-        QMessageBox.information(self, "Mapeo Automático", "Mapeo automático completado")
-    
-    def limpiar_mapeo(self):
-        """Limpia todas las asignaciones"""
-        for i in range(self.tabla_mapeo.rowCount()):
-            combo = self.tabla_mapeo.cellWidget(i, 1)
-            if combo:
-                combo.setCurrentIndex(0)  # "-- No asignar --"
-        
-        self.actualizar_valores_ejemplo()
-    
-    def obtener_mapeo(self) -> Dict:
-        """Obtiene el mapeo actual de la tabla"""
-        mapeo = {}
-        for i in range(self.tabla_mapeo.rowCount()):
-            placeholder_item = self.tabla_mapeo.item(i, 0)
-            if placeholder_item:
-                placeholder = placeholder_item.text().replace('{', '').replace('}', '')
-                combo = self.tabla_mapeo.cellWidget(i, 1)
-                if combo:
-                    columna = combo.currentData()
-                    if columna:
-                        mapeo[placeholder] = columna
-        return mapeo
-    
-    def generar_preview(self):
-        """Genera un PDF de preview con datos de ejemplo"""
-        mapeo = self.obtener_mapeo()
-        
-        if not mapeo:
-            QMessageBox.warning(self, "Error", 
-                              "Debe asignar al menos un placeholder a una columna del padrón")
-            return
-        
-        if not self.datos_ejemplo:
-            QMessageBox.warning(self, "Error", 
-                              "No hay datos de ejemplo disponibles del padrón")
-            return
-        
-        # Crear directorio temporal para preview
-        temp_dir = tempfile.gettempdir()
-        preview_dir = os.path.join(temp_dir, "preview_plantillas")
-        os.makedirs(preview_dir, exist_ok=True)
-        
-        # Configurar UI para preview
-        self.progress_preview.setVisible(True)
-        self.progress_preview.setRange(0, 0)  # Progress bar indeterminado
-        self.texto_log.clear()
-        self.agregar_log("🔄 Generando preview...")
-        
-        # Ejecutar en hilo
-        self.thread_preview = GenerarPreviewThread(
-            self.word_path,
-            mapeo,
-            self.datos_ejemplo,
-            preview_dir
-        )
-        self.thread_preview.preview_generado.connect(self.on_preview_generado)
-        self.thread_preview.start()
-    
-    def on_preview_generado(self, exito: bool, resultado: str):
-        """Cuando termina la generación del preview"""
-        self.progress_preview.setVisible(False)
-        
-        if exito:
-            self.agregar_log(f"✅ Preview generado: {resultado}")
-            
-            # Preguntar si quiere abrir el PDF
-            reply = QMessageBox.question(
-                self, "Preview Listo",
-                "✅ Preview generado exitosamente.\n\n¿Desea abrir el archivo PDF?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-            )
-            
-            if reply == QMessageBox.StandardButton.Yes:
-                import subprocess
-                try:
-                    if os.name == 'nt':  # Windows
-                        os.startfile(resultado)
-                    elif os.name == 'posix':  # Linux/macOS
-                        subprocess.run(['xdg-open', resultado])
-                except:
-                    QMessageBox.information(self, "Abrir PDF", 
-                                          f"PDF generado en:\n{resultado}")
-        else:
-            self.agregar_log(f"❌ Error: {resultado}")
-            QMessageBox.critical(self, "Error en Preview", 
-                               f"No se pudo generar el preview:\n\n{resultado}")
-    
-    def guardar_plantilla(self):
-        """Guarda o actualiza la plantilla en la base de datos"""
-        # Validaciones
-        nombre = self.txt_nombre.text().strip()
-        if not nombre:
-            QMessageBox.warning(self, "Error", "El nombre de la plantilla es obligatorio")
-            return
-        
-        mapeo = self.obtener_mapeo()
-        if not mapeo:
-            QMessageBox.warning(self, "Error", 
-                              "Debe asignar al menos un placeholder a una columna del padrón")
-            return
-        
-        # Preparar directorio de plantillas
-        from config.settings import settings
-        plantillas_dir = os.path.join(os.path.dirname(__file__), "..", "..", "..", "plantillas")
-        os.makedirs(plantillas_dir, exist_ok=True)
-        
-        db = SessionLocal()
-        try:
-            # Copiar archivo Word a directorio de plantillas
-            nombre_archivo = f"{nombre.replace(' ', '_')}_{self.proyecto_id}.docx"
-            ruta_final = TemplateService.copiar_plantilla_a_destino(
-                self.word_path,
-                plantillas_dir,
-                nombre_archivo
-            )
-            
-            if self.plantilla_existente:
-                # Actualizar plantilla existente
-                plantilla = self.plantilla_existente
-                plantilla.nombre = nombre
-                plantilla.descripcion = self.txt_descripcion.text().strip()
-                plantilla.ruta_archivo_docx = ruta_final
-                plantilla.campos_mapeo = mapeo
-                plantilla.configuracion = {"fuente": "Calibri", "tamano": 11}
-                plantilla.activa = self.check_activa.isChecked()
-                
-                mensaje = "✅ Plantilla actualizada"
-            else:
-                # Crear nueva plantilla
-                plantilla = Plantilla(
-                    proyecto_id=self.proyecto_id,
-                    nombre=nombre,
-                    descripcion=self.txt_descripcion.text().strip(),
-                    ruta_archivo_docx=ruta_final,
-                    campos_mapeo=mapeo,
-                    configuracion={"fuente": "Calibri", "tamano": 11},
-                    activa=self.check_activa.isChecked(),
-                    usuario_creador=self.usuario.id
-                )
-                db.add(plantilla)
-                mensaje = "✅ Plantilla creada"
-            
-            db.commit()
-            
-            QMessageBox.information(self, "Éxito", 
-                                  f"{mensaje}\n\n"
-                                  f"• {len(mapeo)} campos mapeados\n"
-                                  f"• Archivo: {os.path.basename(ruta_final)}")
-            
-            self.plantilla_guardada.emit()
-            
-        except Exception as e:
-            db.rollback()
-            QMessageBox.critical(self, "Error", f"Error guardando plantilla:\n{str(e)}")
-            print(f"Error guardando plantilla: {e}")
-        finally:
-            db.close()
-    
-    def cancelar(self):
-        """Cancela y regresa al dashboard de proyectos"""
-        if self.stacked_widget:
-            # Buscar y mostrar dashboard de proyectos
-            for i in range(self.stacked_widget.count()):
-                widget = self.stacked_widget.widget(i)
-                if widget.__class__.__name__ == "DashboardProyectos":
-                    self.stacked_widget.setCurrentWidget(widget)
-                    break
-    
-    def limpiar_formulario(self):
-        """Limpia todo el formulario"""
-        self.word_path = None
-        self.placeholders = []
-        self.plantilla_existente = None
-        
-        self.txt_ruta_word.clear()
-        self.txt_nombre.clear()
-        self.txt_descripcion.clear()
-        self.check_activa.setChecked(True)
-        
-        self.mapeo_group.setVisible(False)
-        self.config_group.setVisible(False)
-        self.preview_group.setVisible(False)
-        
-        self.btn_guardar.setEnabled(False)
-        self.btn_preview.setEnabled(False)
-        
-        self.tabla_mapeo.setRowCount(0)
-        self.texto_log.clear()
-    
-    def agregar_log(self, mensaje: str):
-        """Agrega mensaje al log"""
-        from datetime import datetime
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        self.texto_log.append(f"[{timestamp}] {mensaje}")
-        
-        # Auto-scroll al final
-        cursor = self.texto_log.textCursor()
-        cursor.movePosition(cursor.MoveOperation.End)
-        self.texto_log.setTextCursor(cursor)

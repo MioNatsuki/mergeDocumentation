@@ -65,15 +65,3 @@
 2025-12-09 14:08:57,302 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 1
 2025-12-11 10:14:39,911 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 1
 2025-12-11 10:34:31,910 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 1
-2026-01-05 12:39:33,705 - correspondencia_app - ERROR - Error en auditoría: (psycopg2.errors.InFailedSqlTransaction) transacción abortada, las órdenes serán ignoradas hasta el fin de bloque de transacción
-
-[SQL: INSERT INTO bitacora (usuario_id, accion, modulo, detalles, ip_address, user_agent) VALUES (%(usuario_id)s, %(accion)s, %(modulo)s, %(detalles)s, %(ip_address)s, %(user_agent)s) RETURNING bitacora.id, bitacora.fecha_evento]
-[parameters: {'usuario_id': None, 'accion': 'login_fallido', 'modulo': 'auth', 'detalles': '{"usuario_intento": "superadmin", "motivo": "Error: (psycopg2.errors.UndefinedColumn) no existe la columna usuarios.rol\\nLINE 1: ....\\"contrase\\u0 ... (617 characters truncated) ... n LIMIT %(param_1)s]\\n[parameters: {\'usuario_1\': \'superadmin\', \'param_1\': 1}]\\n(Background on this error at: https://sqlalche.me/e/20/f405)"}', 'ip_address': '172.16.0.22', 'user_agent': 'PyQt App'}]
-(Background on this error at: https://sqlalche.me/e/20/2j85)
-2026-01-05 13:04:01,701 - correspondencia_app - ERROR - Error en auditoría: (psycopg2.errors.InFailedSqlTransaction) transacción abortada, las órdenes serán ignoradas hasta el fin de bloque de transacción
-
-[SQL: INSERT INTO bitacora (usuario_id, accion, modulo, detalles, ip_address, user_agent) VALUES (%(usuario_id)s, %(accion)s, %(modulo)s, %(detalles)s, %(ip_address)s, %(user_agent)s) RETURNING bitacora.id, bitacora.fecha_evento]
-[parameters: {'usuario_id': None, 'accion': 'login_fallido', 'modulo': 'auth', 'detalles': '{"usuario_intento": "superadmin", "motivo": "Error: (psycopg2.errors.UndefinedColumn) no existe la columna usuarios.rol\\nLINE 1: ....\\"contrase\\u0 ... (617 characters truncated) ... n LIMIT %(param_1)s]\\n[parameters: {\'usuario_1\': \'superadmin\', \'param_1\': 1}]\\n(Background on this error at: https://sqlalche.me/e/20/f405)"}', 'ip_address': '172.16.0.22', 'user_agent': 'PyQt App'}]
-(Background on this error at: https://sqlalche.me/e/20/2j85)
-2026-01-05 13:41:30,854 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 1
-2026-01-05 13:47:19,725 - correspondencia_app - INFO - AUDITORIA - auth.login - Usuario: 1

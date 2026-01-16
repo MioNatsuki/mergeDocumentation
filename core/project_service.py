@@ -8,20 +8,18 @@ class ProjectService:
         self.db = db
     
     def obtener_proyectos_usuario(self, usuario: Usuario) -> List[Proyecto]:
-        """Obtiene proyectos visibles para el usuario según su ROL"""
+        """Obtiene proyectos visibles para el usuario (sin eliminados)"""
         try:
             base_query = self.db.query(Proyecto).filter(
                 Proyecto.activo == True,
-                Proyecto.is_deleted == False
+                Proyecto.is_deleted == False  # ← ESTA LÍNEA ES CRÍTICA
             )
             
-            # 🎯 LÓGICA ACTUALIZADA POR ROL
             if usuario.rol == "superadmin":
-                # Superadmin ve TODOS los proyectos
                 return base_query.all()
-                
-            elif usuario.rol == "analista":
-                # Analista ve solo su proyecto asignado
+            elif usuario.rol == "admin":
+                return base_query.all()
+            else:  # lector
                 if not usuario.proyecto_permitido:
                     return []
                 
@@ -34,26 +32,6 @@ class ProjectService:
                     return []
                 
                 return base_query.filter(Proyecto.id.in_(proyectos_permitidos)).all()
-                
-            elif usuario.rol == "auxiliar":
-                # Auxiliar ve solo su proyecto asignado
-                if not usuario.proyecto_permitido:
-                    return []
-                
-                try:
-                    proyectos_permitidos = [int(p.strip()) for p in usuario.proyecto_permitido.split(',') if p.strip().isdigit()]
-                except:
-                    proyectos_permitidos = []
-                
-                if not proyectos_permitidos:
-                    return []
-                
-                return base_query.filter(Proyecto.id.in_(proyectos_permitidos)).all()
-                
-            else:
-                # Rol no reconocido
-                print(f"⚠️ Rol no reconocido: {usuario.rol}")
-                return []
                 
         except Exception as e:
             print(f"DEBUG - Error en obtener_proyectos_usuario: {e}")

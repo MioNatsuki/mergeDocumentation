@@ -7,10 +7,10 @@ from utils.logger import auditoria
 
 # Importar módulos nuevos
 from ui.modules.proyectos.dashboard_proyectos import DashboardProyectos
-#from ui.modules.plantillas.dashboard_plantillas import DashboardPlantillasMejorado
+from ui.modules.plantillas.dashboard_plantillas import DashboardPlantillasMejorado
 from ui.modules.estadisticas.dashboard_estadisticas import DashboardEstadisticas
 from ui.modules.configuracion.panel_configuracion import PanelConfiguracion
-#from ui.modules.plantillas.dashboard_plantillas import DashboardPlantillasMejorado
+from ui.modules.plantillas.dashboard_plantillas import DashboardPlantillasMejorado
 
 class MainWindow(QMainWindow):
     def __init__(self, usuario: Usuario):
@@ -127,20 +127,14 @@ class MainWindow(QMainWindow):
         """Cuando se selecciona un proyecto desde el dashboard"""
         print(f"DEBUG: Navegando al proyecto {proyecto_id}")
         
-        # Usar el NUEVO dashboard de plantillas Word
-        from ui.modules.plantillas.dashboard_plantillas import DashboardPlantillas
-        dashboard_plantillas = DashboardPlantillas(self.usuario, proyecto_id, self.stacked_widget)
-        dashboard_plantillas.plantilla_guardada.connect(self.on_plantilla_guardada)
+        # Usar el nuevo dashboard
+        dashboard_plantillas = DashboardPlantillasMejorado(self.usuario, proyecto_id, self.stacked_widget)
+        dashboard_plantillas.plantilla_seleccionada.connect(self.on_plantilla_seleccionada)
+        dashboard_plantillas.volver_a_proyectos.connect(self.mostrar_dashboard_proyectos) 
         
         # Agregar al stacked widget y mostrar
         self.stacked_widget.addWidget(dashboard_plantillas)
         self.stacked_widget.setCurrentWidget(dashboard_plantillas)
-    
-    def on_plantilla_guardada(self):
-        """Cuando se guarda una plantilla"""
-        QMessageBox.information(self, "Plantilla Guardada", 
-                            "Plantilla Word guardada exitosamente.\n\n"
-                            "Ahora puede usarla para generar documentos.")
 
     def on_plantilla_seleccionada(self, plantilla_id, accion):
         """Cuando se selecciona una plantilla"""

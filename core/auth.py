@@ -20,13 +20,12 @@ class AuthService:
             return "127.0.0.1"
     
     def autenticar_usuario(self, usuario: str, password: str, ip_address: str = None, user_agent: str = None):
-        """Autentica usuario y registra en bitácora - VERSIÓN ACTUALIZADA"""
+        """Autentica usuario y registra en bitácora"""
         try:
             # Si no se proporciona IP, obtener una válida
             if not ip_address or ip_address == "localhost":
                 ip_address = self.obtener_ip_real()
             
-            # 🔍 Consulta ACTUALIZADA con la columna 'rol'
             user = self.db.query(Usuario).filter(Usuario.usuario == usuario).first()
             
             if not user:
@@ -45,7 +44,6 @@ class AuthService:
                 self.registrar_intento_fallido(usuario, ip_address, user_agent, "Contraseña incorrecta")
                 return None, "Credenciales incorrectas"
             
-            # ✅ Autenticación exitosa
             # Actualizar último login
             user.ultimo_login = datetime.datetime.now()
             self.db.commit()
@@ -57,27 +55,15 @@ class AuthService:
                 accion="login",
                 modulo="auth",
                 ip_address=ip_address,
-                user_agent=user_agent,
-                detalles={
-                    "usuario": user.usuario,
-                    "rol": user.rol,
-                    "proyecto_permitido": user.proyecto_permitido
-                }
+                user_agent=user_agent
             )
             
             return user, "Autenticación exitosa"
             
         except Exception as e:
-            # Manejo de error mejorado
             ip_fallback = self.obtener_ip_real()
-            error_msg = f"Error: {str(e)}"
-            
-            # Detectar si es error de columna faltante
-            if "no existe la columna" in str(e):
-                error_msg = "Error de esquema: Falta columna 'rol' en la base de datos. Ejecuta el script de actualización."
-            
-            self.registrar_intento_fallido(usuario, ip_fallback, user_agent, error_msg)
-            return None, f"Error de autenticación: {str(e)[:100]}"
+            self.registrar_intento_fallido(usuario, ip_fallback, user_agent, f"Error: {str(e)}")
+            return None, f"Error de autenticación: {str(e)}"
     
     def registrar_intento_fallido(self, usuario: str, ip_address: str, user_agent: str, motivo: str = ""):
         """Registra intento fallido de login"""

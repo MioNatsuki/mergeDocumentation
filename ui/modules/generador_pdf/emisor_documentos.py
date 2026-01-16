@@ -1,19 +1,21 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                              QPushButton, QFrame, QMessageBox, QProgressBar,
                              QGroupBox, QTextEdit, QComboBox, QCheckBox,
-                             QSpinBox, QFormLayout, QFileDialog)
+                             QSpinBox, QFormLayout)
 from PyQt6.QtCore import Qt, pyqtSignal, QThread
 from PyQt6.QtGui import QFont
 from config.database import SessionLocal
-from core.template_service import TemplateService
 from core.models import Plantilla, EmisionTemp, Proyecto
 from core.csv_service import CSVService
 import os
 from datetime import datetime
 import json
 
+from core.pdf_service import PDFService
+from core.models import Plantilla
+
 class GeneracionPDFThread(QThread):
-    """Hilo para generación de PDFs en segundo plano usando plantillas Word"""
+    """Hilo para generación de PDFs en segundo plano"""
     progreso = pyqtSignal(int, str, str)  # porcentaje, mensaje, cuenta_actual
     terminado = pyqtSignal(bool, int, int, list)  # éxito, total, exitosos, errores
     
@@ -28,46 +30,53 @@ class GeneracionPDFThread(QThread):
         self.previsualizar = previsualizar
     
     def run(self):
-        db = SessionLocal()
         try:
-            # 1. Obtener plantilla con configuración Word
-            plantilla = db.query(Plantilla).filter(Plantilla.id == self.plantilla_id).first()
+            db = SessionLocal()
+            pdf_service = PDFService()
             
-            if not plantilla:
-                self.terminado.emit(False, 0, 0, ["Plantilla no encontrada"])
-                return
-            
-            if not plantilla.ruta_archivo_docx or not os.path.exists(plantilla.ruta_archivo_docx):
-                self.terminado.emit(False, 0, 0, [
-                    f"Archivo Word de plantilla no encontrado: {plantilla.ruta_archivo_docx}"
-                ])
-                return
-            
-            if not plantilla.campos_mapeo:
-                self.terminado.emit(False, 0, 0, ["La plantilla no tiene campos mapeados"])
-                return
-            
-            # 2. Obtener registros a procesar
+            # Obtener registros a procesar
             registros = db.query(EmisionTemp).filter(
                 EmisionTemp.proyecto_id == self.proyecto_id,
                 EmisionTemp.sesion_id == self.sesion_id,
                 EmisionTemp.estado == 'match_ok'
-            ).order_by(EmisionTemp.orden_impresion).all()
+            ).all()
             
             total_registros = len(registros)
             if total_registros == 0:
                 self.terminado.emit(False, 0, 0, ["No hay registros válidos para procesar"])
                 return
             
-            # 3. Preparar datos para procesamiento
+            # Obtener plantilla y configuración
+            plantilla = db.query(Plantilla).filter(Plantilla.id == self.plantilla_id).first()
+            if not plantilla or not plantilla.campos_json:
+                self.terminado.emit(False, 0, 0, ["Plantilla no encontrada o sin campos configurados"])
+                return
+            
+            plantilla_config = {
+                'page_size': 'A4',
+                'margin': 20,
+                'campos': plantilla.campos_json,
+                'mostrar_info_sistema': True
+            }
+            
+            # Validar configuración
+            es_valida, erroes_validacion = pdf_service.validar_configuracion_plantilla(plantilla_config)
+            if not es_valida:
+                self.terminado.emit(False, 0, 0, erroes_validacion)
+                return
+            
+            exitosos = 0
+            erroes = []
+            
+            # Preparar datos para procesamiento por lotes
             datos_registros = []
             for registro in registros:
                 datos = {
                     'cuenta': registro.cuenta,
-                    'codigo_afiliado': registro.codigo_afiliado
+                    'codigo_afiliado': registro.codigo_afiliado,
+                    'datos_json': registro.datos_json
                 }
-                
-                # Combinar datos JSON del registro
+                # Agregar datos del JSON si existe
                 if registro.datos_json:
                     if isinstance(registro.datos_json, str):
                         try:
@@ -80,33 +89,29 @@ class GeneracionPDFThread(QThread):
                 
                 datos_registros.append(datos)
             
-            # 4. Procesar según modo
+            # Procesar por lotes
             if self.previsualizar:
                 # Solo previsualizar el primer registro
-                self.progreso.emit(50, "Generando previsualización...", datos_registros[0].get('cuenta', 'preview'))
+                primer_registro = datos_registros[0] if datos_registros else {}
+                cuenta_actual = primer_registro.get('cuenta', 'preview')
                 
-                resultado = TemplateService.generar_lote_pdfs(
-                    plantilla.ruta_archivo_docx,
-                    plantilla.campos_mapeo,
-                    [datos_registros[0]],  # Solo el primero
-                    self.ruta_salida,
-                    callback_progreso=self.actualizar_progreso_callback
+                self.progreso.emit(50, "Generando previsualización...", cuenta_actual)
+                
+                nombre_archivo = f"preview_{cuenta_actual}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+                exito, resultado = pdf_service.generar_pdf(
+                    primer_registro, plantilla_config, self.ruta_salida, nombre_archivo
                 )
                 
-                if resultado['exitosos'] > 0:
+                if exito:
                     self.terminado.emit(True, 1, 1, [])
                 else:
-                    self.terminado.emit(False, 1, 0, resultado['errores'])
+                    self.terminado.emit(False, 1, 0, [resultado])
                     
             else:
                 # Generación masiva
-                self.progreso.emit(10, f"Preparando {total_registros} documentos...", "")
-                
-                # Procesar por lotes para mejor manejo de memoria
-                resultados = TemplateService.generar_lote_pdfs(
-                    plantilla.ruta_archivo_docx,
-                    plantilla.campos_mapeo,
-                    datos_registros,
+                resultados = pdf_service.generar_lote_pdfs(
+                    datos_registros, 
+                    plantilla_config, 
                     self.ruta_salida,
                     callback_progreso=self.actualizar_progreso_callback
                 )
@@ -119,22 +124,28 @@ class GeneracionPDFThread(QThread):
                 )
                 
         except Exception as e:
-            error_msg = f"Error general en generación: {str(e)}"
-            print(f"❌ {error_msg}")
-            import traceback
-            traceback.print_exc()
-            self.terminado.emit(False, 0, 0, [error_msg])
+            self.terminado.emit(False, 0, 0, [f"Error general: {str(e)}"])
         finally:
             db.close()
     
-    def actualizar_progreso_callback(self, actual: int, total: int, cuenta: str, exito: bool):
-        """Callback para actualizar progreso durante generación por lotes"""
-        porcentaje = int((actual / total) * 100) if total > 0 else 0
-        mensaje = f"Procesando {actual}/{total}"
-        self.progreso.emit(porcentaje, mensaje, cuenta)
+    def generar_pdf_simulado(self, registro, plantilla, indice):
+        """Simula la generación de PDF (reemplazar con ReportLab)"""
+        # En producción, aquí iría la generación real con ReportLab
+        nombre_archivo = f"documento_{registro.cuenta or indice}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        ruta_completa = os.path.join(self.ruta_salida, nombre_archivo)
+        
+        # Simular tiempo de generación
+        import time
+        time.sleep(0.1)
+        
+        # Crear archivo vacío (simulación)
+        with open(ruta_completa, 'w') as f:
+            f.write(f"SIMULACIÓN PDF - {registro.cuenta}")
+        
+        return nombre_archivo
 
 class EmisorDocumentos(QWidget):
-    """Interfaz para generación masiva de documentos PDF desde plantillas Word"""
+    """Interfaz para generación masiva de documentos PDF"""
     generacion_completada = pyqtSignal()
     
     def __init__(self, usuario, proyecto_id, plantilla_id=None, sesion_id=None):
@@ -152,7 +163,7 @@ class EmisorDocumentos(QWidget):
         layout.setSpacing(20)
         
         # Header
-        header = QLabel("Generación de Documentos PDF desde Word")
+        header = QLabel("Generación de Documentos PDF")
         header.setFont(QFont("Arial", 16, QFont.Weight.Bold))
         header.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(header)
@@ -180,35 +191,20 @@ class EmisorDocumentos(QWidget):
         
         # Selección de plantilla
         self.combo_plantillas = QComboBox()
-        self.combo_plantillas.currentIndexChanged.connect(self.on_plantilla_cambiada)
-        config_layout.addRow("Plantilla Word:", self.combo_plantillas)
-        
-        # Información de la plantilla seleccionada
-        self.lbl_info_plantilla = QLabel("")
-        self.lbl_info_plantilla.setStyleSheet("color: #6c757d; font-size: 11px;")
-        self.lbl_info_plantilla.setWordWrap(True)
-        config_layout.addRow("", self.lbl_info_plantilla)
+        config_layout.addRow("Plantilla:", self.combo_plantillas)
         
         # Ruta de salida
         ruta_layout = QHBoxLayout()
         self.lbl_ruta_salida = QLabel("C:/temp/documentos/")
-        self.lbl_ruta_salida.setStyleSheet("""
-            QLabel {
-                background-color: #f8f9fa;
-                padding: 8px;
-                border: 1px solid #dee2e6;
-                border-radius: 4px;
-            }
-        """)
-        self.lbl_ruta_salida.setWordWrap(True)
+        self.lbl_ruta_salida.setStyleSheet("background-color: #f8f9fa; padding: 5px; border: 1px solid #ddd;")
         
-        btn_cambiar_ruta = QPushButton("📁 Cambiar")
+        btn_cambiar_ruta = QPushButton("Cambiar")
         btn_cambiar_ruta.clicked.connect(self.cambiar_ruta_salida)
-        btn_cambiar_ruta.setStyleSheet("padding: 8px 12px;")
+        btn_cambiar_ruta.setStyleSheet("padding: 5px 10px;")
         
-        ruta_layout.addWidget(self.lbl_ruta_salida, 3)
-        ruta_layout.addWidget(btn_cambiar_ruta, 1)
-        config_layout.addRow("Ruta de salida PDFs:", ruta_layout)
+        ruta_layout.addWidget(self.lbl_ruta_salida)
+        ruta_layout.addWidget(btn_cambiar_ruta)
+        config_layout.addRow("Ruta de salida:", ruta_layout)
         
         # Opciones
         self.check_previsualizar = QCheckBox("Generar solo previsualización (primer registro)")
@@ -255,7 +251,7 @@ class EmisorDocumentos(QWidget):
         # Botones de acción
         button_layout = QHBoxLayout()
         
-        self.btn_generar = QPushButton("🔄 Generar Documentos PDF")
+        self.btn_generar = QPushButton("🔄 Generar Documentos")
         self.btn_generar.clicked.connect(self.generar_documentos)
         self.btn_generar.setStyleSheet("""
             QPushButton {
@@ -328,16 +324,15 @@ class EmisorDocumentos(QWidget):
             if proyecto:
                 self.lbl_proyecto.setText(proyecto.nombre)
             
-            # Cargar plantillas Word activas
+            # Cargar plantillas
             plantillas = db.query(Plantilla).filter(
                 Plantilla.proyecto_id == self.proyecto_id,
-                Plantilla.activa == True,
-                Plantilla.ruta_archivo_docx.isnot(None)  # Solo plantillas con Word
+                Plantilla.activa == True
             ).all()
             
             self.combo_plantillas.clear()
             for plantilla in plantillas:
-                self.combo_plantillas.addItem(f"📄 {plantilla.nombre}", plantilla.id)
+                self.combo_plantillas.addItem(plantilla.nombre, plantilla.id)
             
             # Seleccionar plantilla por defecto si se proporcionó
             if self.plantilla_id:
@@ -352,65 +347,34 @@ class EmisorDocumentos(QWidget):
                 self.lbl_registros.setText(f"{stats['match_ok']} registros válidos")
                 self.lbl_sesion.setText(self.sesion_id[:8] + "...")
                 
-                # Habilitar botones si hay registros y plantillas
+                # Actualizar plantilla si hay una sesión
                 if stats['match_ok'] > 0 and self.combo_plantillas.count() > 0:
                     self.btn_generar.setEnabled(True)
-                    self.btn_previsualizar.setEnabled(True)
                 else:
                     self.btn_generar.setEnabled(False)
-                    self.btn_previsualizar.setEnabled(False)
             else:
                 self.lbl_registros.setText("No hay sesión activa")
                 self.lbl_sesion.setText("N/A")
                 self.btn_generar.setEnabled(False)
-                self.btn_previsualizar.setEnabled(False)
             
-            # Cargar información de plantilla actual
-            self.actualizar_info_plantilla()
+            # Cargar plantilla actual
+            if self.combo_plantillas.count() > 0:
+                plantilla_id = self.combo_plantillas.currentData()
+                plantilla = db.query(Plantilla).filter(Plantilla.id == plantilla_id).first()
+                if plantilla:
+                    self.lbl_plantilla.setText(plantilla.nombre)
             
         except Exception as e:
             self.agregar_log(f"❌ Error cargando datos: {str(e)}")
         finally:
             db.close()
     
-    def on_plantilla_cambiada(self):
-        """Cuando cambia la selección de plantilla"""
-        self.actualizar_info_plantilla()
-    
-    def actualizar_info_plantilla(self):
-        """Actualiza la información de la plantilla seleccionada"""
-        db = SessionLocal()
-        try:
-            if self.combo_plantillas.count() > 0:
-                plantilla_id = self.combo_plantillas.currentData()
-                if plantilla_id:
-                    plantilla = db.query(Plantilla).filter(Plantilla.id == plantilla_id).first()
-                    if plantilla:
-                        self.lbl_plantilla.setText(plantilla.nombre)
-                        
-                        # Mostrar información detallada
-                        campos = plantilla.campos_mapeo or {}
-                        info_text = f"📝 {len(campos)} campos mapeados"
-                        if plantilla.ruta_archivo_docx:
-                            archivo = os.path.basename(plantilla.ruta_archivo_docx)
-                            info_text += f" | Archivo: {archivo}"
-                        
-                        self.lbl_info_plantilla.setText(info_text)
-                else:
-                    self.lbl_plantilla.setText("Seleccione una plantilla")
-                    self.lbl_info_plantilla.setText("")
-            else:
-                self.lbl_plantilla.setText("No hay plantillas disponibles")
-                self.lbl_info_plantilla.setText("Cree una plantilla Word primero")
-                
-        finally:
-            db.close()
-    
     def cambiar_ruta_salida(self):
         """Cambiar la ruta de salida de los PDFs"""
+        from PyQt6.QtWidgets import QFileDialog
         nueva_ruta = QFileDialog.getExistingDirectory(
             self, 
-            "Seleccionar carpeta de salida para PDFs",
+            "Seleccionar carpeta de salida",
             self.ruta_salida
         )
         
@@ -426,34 +390,11 @@ class EmisorDocumentos(QWidget):
             return
         
         if self.combo_plantillas.count() == 0:
-            QMessageBox.warning(self, "Error", "No hay plantillas Word disponibles")
+            QMessageBox.warning(self, "Error", "No hay plantillas disponibles")
             return
         
         plantilla_id = self.combo_plantillas.currentData()
         previsualizar = self.check_previsualizar.isChecked()
-        
-        # Confirmar si es generación masiva
-        if not previsualizar:
-            db = SessionLocal()
-            try:
-                csv_service = CSVService(db)
-                stats = csv_service.obtener_estadisticas_sesion(self.sesion_id)
-                total = stats['match_ok']
-                
-                if total > 50:
-                    reply = QMessageBox.question(
-                        self, "Confirmar Generación Masiva",
-                        f"⚠️ Va a generar {total} documentos PDF.\n\n"
-                        f"Esta operación puede tomar varios minutos.\n"
-                        f"¿Desea continuar?",
-                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                        QMessageBox.StandardButton.No
-                    )
-                    
-                    if reply != QMessageBox.StandardButton.Yes:
-                        return
-            finally:
-                db.close()
         
         # Mostrar área de progreso
         self.grupo_progreso.setVisible(True)
@@ -462,11 +403,7 @@ class EmisorDocumentos(QWidget):
         
         # Limpiar log anterior
         self.texto_log.clear()
-        
-        if previsualizar:
-            self.agregar_log("👁️ Iniciando previsualización...")
-        else:
-            self.agregar_log("🚀 Iniciando generación masiva de documentos...")
+        self.agregar_log("🚀 Iniciando generación de documentos...")
         
         # Crear y ejecutar hilo de generación
         self.thread_generacion = GeneracionPDFThread(
@@ -486,8 +423,8 @@ class EmisorDocumentos(QWidget):
         """Actualizar barra de progreso"""
         self.progress_bar.setValue(porcentaje)
         self.lbl_estado.setText(mensaje)
-        self.lbl_cuenta_actual.setText(f"Cuenta actual: {cuenta_actual}" if cuenta_actual else "")
-        self.agregar_log(f"📊 {mensaje} - {cuenta_actual}" if cuenta_actual else f"📊 {mensaje}")
+        self.lbl_cuenta_actual.setText(f"Cuenta actual: {cuenta_actual}")
+        self.agregar_log(f"📊 {mensaje} - {cuenta_actual}")
     
     def generacion_terminada(self, exito: bool, total: int, exitosos: int, errores: list):
         """Cuando termina la generación"""
@@ -502,10 +439,6 @@ class EmisorDocumentos(QWidget):
                 )
             else:
                 self.agregar_log(f"✅ Generación completada: {exitosos}/{total} documentos")
-                
-                # Mover registros a emisiones_final y acumulados
-                self.mover_a_final_y_acumulados()
-                
                 QMessageBox.information(
                     self, 
                     "Generación Completada", 
@@ -517,9 +450,6 @@ class EmisorDocumentos(QWidget):
         else:
             self.agregar_log("❌ Generación fallida")
             errores_str = "\n".join(errores[:5])  # Mostrar solo primeros 5 errores
-            if len(errores) > 5:
-                errores_str += f"\n... y {len(errores) - 5} errores más"
-            
             QMessageBox.critical(
                 self,
                 "Error en Generación",
@@ -529,39 +459,8 @@ class EmisorDocumentos(QWidget):
         self.btn_generar.setEnabled(True)
         self.btn_previsualizar.setEnabled(True)
     
-    def mover_a_final_y_acumulados(self):
-        """Mueve registros procesados a tablas finales y acumulados"""
-        db = SessionLocal()
-        try:
-            from core.emission_service import EmissionService
-            emission_service = EmissionService(db)
-            
-            # Mover a emisiones_final
-            exito, movidos, errores = emission_service.mover_a_emisiones_final(
-                self.sesion_id, self.usuario.id
-            )
-            
-            if exito:
-                self.agregar_log(f"📋 {movidos} registros movidos a emisiones_final")
-                
-                # Acumular emisiones antiguas
-                exito_acum, acumulados, errores_acum = emission_service.acumular_emisiones(
-                    self.proyecto_id, dias_retroceso=30
-                )
-                
-                if exito_acum and acumulados > 0:
-                    self.agregar_log(f"🗃️ {acumulados} registros antiguos acumulados")
-            else:
-                self.agregar_log(f"⚠️ Error moviendo a final: {errores}")
-                
-        except Exception as e:
-            self.agregar_log(f"⚠️ Error en proceso post-generación: {str(e)}")
-        finally:
-            db.close()
-    
     def agregar_log(self, mensaje: str):
         """Agregar mensaje al log"""
-        from datetime import datetime
         timestamp = datetime.now().strftime("%H:%M:%S")
         self.texto_log.append(f"[{timestamp}] {mensaje}")
         # Auto-scroll al final
@@ -575,4 +474,3 @@ class EmisorDocumentos(QWidget):
         self.progress_bar.setValue(0)
         self.texto_log.clear()
         self.lbl_cuenta_actual.setText("")
-        self.lbl_estado.setText("Preparando generación...")

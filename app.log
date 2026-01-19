@@ -70,3 +70,13 @@
 [SQL: INSERT INTO bitacora (usuario_id, accion, modulo, detalles, ip_address, user_agent) VALUES (%(usuario_id)s, %(accion)s, %(modulo)s, %(detalles)s, %(ip_address)s, %(user_agent)s) RETURNING bitacora.id, bitacora.fecha_evento]
 [parameters: {'usuario_id': None, 'accion': 'login_fallido', 'modulo': 'auth', 'detalles': '{"usuario_intento": "superadmin", "motivo": "Error: (psycopg2.errors.UndefinedColumn) no existe la columna usuarios.contrase\\u00f1a_hash\\nLINE 1: . ... (617 characters truncated) ... n LIMIT %(param_1)s]\\n[parameters: {\'usuario_1\': \'superadmin\', \'param_1\': 1}]\\n(Background on this error at: https://sqlalche.me/e/20/f405)"}', 'ip_address': '172.16.0.22', 'user_agent': 'PyQt App'}]
 (Background on this error at: https://sqlalche.me/e/20/2j85)
+2026-01-19 12:09:03,094 - correspondencia_app - ERROR - Error en auditoría: (psycopg2.errors.InFailedSqlTransaction) transacción abortada, las órdenes serán ignoradas hasta el fin de bloque de transacción
+
+[SQL: INSERT INTO bitacora (usuario_id, accion, modulo, detalles, ip_address, user_agent) VALUES (%(usuario_id)s, %(accion)s, %(modulo)s, %(detalles)s, %(ip_address)s, %(user_agent)s) RETURNING bitacora.id, bitacora.fecha_evento]
+[parameters: {'usuario_id': None, 'accion': 'login_fallido', 'modulo': 'auth', 'detalles': '{"usuario_intento": "superadmin", "motivo": "Error: (psycopg2.errors.UndefinedColumn) no existe la columna usuarios.contrase\\u00f1a_hash\\nLINE 1: . ... (617 characters truncated) ... n LIMIT %(param_1)s]\\n[parameters: {\'usuario_1\': \'superadmin\', \'param_1\': 1}]\\n(Background on this error at: https://sqlalche.me/e/20/f405)"}', 'ip_address': '172.16.0.22', 'user_agent': 'PyQt App'}]
+(Background on this error at: https://sqlalche.me/e/20/2j85)
+2026-01-19 12:09:06,977 - correspondencia_app - ERROR - Error en auditoría: (psycopg2.errors.InFailedSqlTransaction) transacción abortada, las órdenes serán ignoradas hasta el fin de bloque de transacción
+
+[SQL: INSERT INTO bitacora (usuario_id, accion, modulo, detalles, ip_address, user_agent) VALUES (%(usuario_id)s, %(accion)s, %(modulo)s, %(detalles)s, %(ip_address)s, %(user_agent)s) RETURNING bitacora.id, bitacora.fecha_evento]
+[parameters: {'usuario_id': None, 'accion': 'login_fallido', 'modulo': 'auth', 'detalles': '{"usuario_intento": "superadmin", "motivo": "Error: (psycopg2.errors.UndefinedColumn) no existe la columna usuarios.contrase\\u00f1a_hash\\nLINE 1: . ... (617 characters truncated) ... n LIMIT %(param_1)s]\\n[parameters: {\'usuario_1\': \'superadmin\', \'param_1\': 1}]\\n(Background on this error at: https://sqlalche.me/e/20/f405)"}', 'ip_address': '172.16.0.22', 'user_agent': 'PyQt App'}]
+(Background on this error at: https://sqlalche.me/e/20/2j85)

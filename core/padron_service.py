@@ -128,6 +128,63 @@ class PadronService:
             print(f"Error obteniendo datos ejemplo REALES: {e}")
             return []
     
+    def validar_csv_con_estructura(self, csv_path: str, estructura_esperada: List[Dict]) -> Tuple[bool, List[str]]:
+        """Valida que un CSV tenga la estructura esperada"""
+        try:
+            import pandas as pd
+            
+            # Leer encabezados del CSV
+            df = pd.read_csv(csv_path, nrows=0)
+            columnas_csv = [str(col).strip().lower() for col in df.columns]
+            
+            # Columnas esperadas (nombres limpios)
+            columnas_esperadas = [col['nombre_limpio'].lower() for col in estructura_esperada]
+            
+            errores = []
+            
+            # Verificar columnas obligatorias
+            obligatorias = ['cuenta', 'codigo_afiliado']
+            for obligatoria in obligatorias:
+                if obligatoria not in columnas_esperadas:
+                    errores.append(f"Columna obligatoria '{obligatoria}' no está en la estructura")
+            
+            # Verificar que todas las columnas esperadas estén en el CSV
+            for esperada in columnas_esperadas:
+                if esperada not in columnas_csv:
+                    # Buscar coincidencias aproximadas
+                    coincidencia = False
+                    for csv_col in columnas_csv:
+                        if esperada in csv_col or csv_col in esperada:
+                            coincidencia = True
+                            break
+                    
+                    if not coincidencia:
+                        errores.append(f"Columna '{esperada}' no encontrada en CSV")
+            
+            return len(errores) == 0, errores
+            
+        except Exception as e:
+            return False, [f"Error validando estructura: {str(e)}"]
+    
+    def obtener_preview_csv(self, csv_path: str, filas: int = 10) -> List[Dict]:
+        """Obtiene preview de datos CSV"""
+        try:
+            import pandas as pd
+            
+            # Detectar encoding
+            encoding = self.detectar_encoding(csv_path)
+            
+            # Leer primeras N filas
+            df = pd.read_csv(csv_path, encoding=encoding, nrows=filas)
+            df = df.where(pd.notnull(df), None)
+            
+            # Convertir a lista de diccionarios
+            return df.to_dict('records')
+            
+        except Exception as e:
+            print(f"Error obteniendo preview CSV: {e}")
+            return []
+
     def obtener_todos_registros(self, uuid_padron: str, limit: int = 100) -> List[Dict]:
         """Obtiene todos los registros de un padrón"""
         try:

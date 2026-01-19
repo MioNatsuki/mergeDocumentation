@@ -11,6 +11,7 @@ from ui.modules.plantillas.dashboard_plantillas import DashboardPlantillasMejora
 from ui.modules.estadisticas.dashboard_estadisticas import DashboardEstadisticas
 from ui.modules.configuracion.panel_configuracion import PanelConfiguracion
 from ui.modules.plantillas.dashboard_plantillas import DashboardPlantillasMejorado
+from ui.modules.proyectos.formulario_proyecto import FormularioProyecto
 
 class MainWindow(QMainWindow):
     def __init__(self, usuario: Usuario):
